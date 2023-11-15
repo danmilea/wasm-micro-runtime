@@ -2136,6 +2136,7 @@ wasmtime_ssp_fd_readdir(wasm_exec_env_t exec_env, struct fd_table *curfds,
 #endif
             .d_namlen = (uint32)namlen,
         };
+#if !defined(__VXWORKS__)
         switch (de->d_type) {
             case DT_BLK:
                 cde.d_type = __WASI_FILETYPE_BLOCK_DEVICE;
@@ -2165,6 +2166,9 @@ wasmtime_ssp_fd_readdir(wasm_exec_env_t exec_env, struct fd_table *curfds,
                 cde.d_type = __WASI_FILETYPE_UNKNOWN;
                 break;
         }
+#else
+        cde.d_type = __WASI_FILETYPE_UNKNOWN;
+#endif
         fd_readdir_put(buf, nbyte, bufused, &cde, sizeof(cde));
         fd_readdir_put(buf, nbyte, bufused, de->d_name, namlen);
     }
@@ -2235,9 +2239,15 @@ convert_stat(const struct stat *in, __wasi_filestat_t *out)
         .st_ino = in->st_ino,
         .st_nlink = (__wasi_linkcount_t)in->st_nlink,
         .st_size = (__wasi_filesize_t)in->st_size,
+#if !defined(__VXWORKS__)
         .st_atim = convert_timespec(&in->st_atim),
         .st_mtim = convert_timespec(&in->st_mtim),
         .st_ctim = convert_timespec(&in->st_ctim),
+#else
+        .st_atim = in->st_atime,
+        .st_mtim = in->st_mtime,
+        .st_ctim = in->st_ctime,
+#endif
     };
 }
 

@@ -8,9 +8,9 @@ project (iwasm)
 set (WAMR_BUILD_PLATFORM "vxworks")
 
 # Specify the compiler driver provided in the VSB
-SET(CMAKE_C_COMPILER vx-cc)
-SET(CMAKE_AR vx-ar)
-SET(CMAKE_RANLIB vx-ranlib)
+SET(CMAKE_C_COMPILER wr-cc)
+SET(CMAKE_AR wr-ar)
+SET(CMAKE_RANLIB wr-ranlib)
 
 # Reset default linker flags
 set (CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
@@ -42,8 +42,8 @@ if (NOT DEFINED WAMR_BUILD_INTERP)
 endif ()
 
 if (NOT DEFINED WAMR_BUILD_AOT)
-  # Disable AOT by default.
-  set (WAMR_BUILD_AOT 0)
+  # Enable AOT by default.
+  set (WAMR_BUILD_AOT 1)
 endif ()
 
 if (NOT DEFINED WAMR_BUILD_JIT)
@@ -57,13 +57,19 @@ if (NOT DEFINED WAMR_BUILD_LIBC_BUILTIN)
 endif ()
 
 if (NOT DEFINED WAMR_BUILD_LIBC_WASI)
-  # Disable libc wasi support by default
-  set (WAMR_BUILD_LIBC_WASI 0)
+  # Enable libc wasi support by default
+  set (WAMR_BUILD_LIBC_WASI 1)
 endif ()
 
 if (NOT DEFINED WAMR_BUILD_DEBUG_INTERP)
   # Disable Debug feature by default
   set (WAMR_BUILD_DEBUG_INTERP 0)
+endif ()
+
+if (NOT DEFINED WASM_DISABLE_STACK_HW_BOUND_CHECK)
+  # Disable Debug feature by default
+  set (WASM_DISABLE_STACK_HW_BOUND_CHECK 1)
+  set (OS_ENABLE_HW_BOUND_CHECK 0)
 endif ()
 
 if (WAMR_BUILD_DEBUG_INTERP EQUAL 1)
@@ -73,6 +79,7 @@ if (WAMR_BUILD_DEBUG_INTERP EQUAL 1)
 endif ()
 
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_XOPEN_SOURCE=700 -D_POSIX_C_SOURCE")
 
 set (WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
@@ -93,5 +100,5 @@ install (TARGETS libiwasm DESTINATION lib)
 
 set_target_properties (libiwasm PROPERTIES OUTPUT_NAME iwasm)
 
-target_link_libraries (libiwasm ${LLVM_AVAILABLE_LIBS} -lm -ldl -lunix)
+target_link_libraries (libiwasm ${LLVM_AVAILABLE_LIBS} -lm -lunix)
 

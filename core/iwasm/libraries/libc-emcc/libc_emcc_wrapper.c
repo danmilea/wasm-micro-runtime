@@ -168,12 +168,21 @@ statbuf_native2app(const struct stat *statbuf_native,
     statbuf_app->st_blksize = (unsigned)statbuf_native->st_blksize;
     statbuf_app->st_blocks = (unsigned)statbuf_native->st_blocks;
     statbuf_app->st_ino = (int64)statbuf_native->st_ino;
+#if !defined(__VXWORKS__)
     statbuf_app->st_atim.tv_sec = (int)statbuf_native->st_atim.tv_sec;
     statbuf_app->st_atim.tv_nsec = (int)statbuf_native->st_atim.tv_nsec;
     statbuf_app->st_mtim.tv_sec = (int)statbuf_native->st_mtim.tv_sec;
     statbuf_app->st_mtim.tv_nsec = (int)statbuf_native->st_mtim.tv_nsec;
     statbuf_app->st_ctim.tv_sec = (int)statbuf_native->st_ctim.tv_sec;
     statbuf_app->st_ctim.tv_nsec = (int)statbuf_native->st_ctim.tv_nsec;
+#else
+    statbuf_app->st_atim.tv_sec = (int)statbuf_native->st_atime;
+    statbuf_app->st_atim.tv_nsec = 0;
+    statbuf_app->st_mtim.tv_sec = (int)statbuf_native->st_mtime;
+    statbuf_app->st_mtim.tv_nsec = 0;
+    statbuf_app->st_ctim.tv_sec = (int)statbuf_native->st_ctime;
+    statbuf_app->st_ctim.tv_nsec = 0;
+#endif
 }
 
 static int
@@ -259,7 +268,7 @@ getentropy_wrapper(wasm_exec_env_t exec_env, void *buffer, uint32 length)
 {
     if (buffer == NULL)
         return -1;
-#if defined(_DEFAULT_SOURCE) || defined(BH_PLATFORM_LINUX_SGX)
+#if defined(_DEFAULT_SOURCE) || defined(BH_PLATFORM_LINUX_SGX) || defined(__VXWORKS__)
     return getentropy(buffer, length);
 #else
     return syscall(SYS_getrandom, buffer, length, 0);
