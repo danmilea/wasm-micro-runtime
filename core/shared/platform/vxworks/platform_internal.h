@@ -59,6 +59,10 @@ extern "C" {
 #define	AT_SYMLINK_NOFOLLOW	0x0200	/* Do not follow symbolic links */
 #endif
 
+#if !defined( AT_FDCWD)
+#define AT_FDCWD (-100)
+#endif
+
 #if !defined(PATH_MAX)
 #define PATH_MAX _POSIX_PATH_MAX
 #endif
@@ -91,6 +95,10 @@ extern "C" {
 
 #if !defined(IP_MULTICAST_TTL)
 #define IP_MULTICAST_TTL    10
+#endif
+
+#if !defined(FIOGETNAME)
+#define FIOGETNAME 18
 #endif
 
 #define os_alloca __builtin_alloca

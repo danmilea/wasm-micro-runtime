@@ -10,9 +10,13 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
 
-int getentropy(void *buffer, size_t length)
-{
+#include <platform_internal.h>
+
+int getentropy(void *buffer, size_t length) {
     uint32_t count = 0;
     int fd = 0;
 
@@ -35,13 +39,12 @@ int getentropy(void *buffer, size_t length)
         return -1;
     }
 
-    while(count < length) {
-        ssize_t ret = read(fd, (char*)buffer + count, length - count);
+    while (count < length) {
+        ssize_t ret = read(fd, (char *)buffer + count, length - count);
         if (ret <= 0) {
-            if (errno!=EAGAIN && errno!=EINTR) break;
-        }
-        else {
-          count += ret;
+            if (errno != EAGAIN && errno != EINTR) break;
+        } else {
+            count += ret;
         }
     }
     close(fd);
@@ -54,7 +57,7 @@ int getentropy(void *buffer, size_t length)
     return 0;
 }
 
-ssize_t pread(int fd, void * buf, size_t size, off_t offset) {
+ssize_t pread(int fd, void *buf, size_t size, off_t offset) {
     off_t offs0;
     ssize_t rd;
 
@@ -73,7 +76,7 @@ ssize_t pread(int fd, void * buf, size_t size, off_t offset) {
     return rd;
 }
 
-ssize_t pwrite(int fd, const void * buf, size_t size, off_t offset) {
+ssize_t pwrite(int fd, const void *buf, size_t size, off_t offset) {
     off_t offs0;
     ssize_t wr;
 
@@ -92,63 +95,267 @@ ssize_t pwrite(int fd, const void * buf, size_t size, off_t offset) {
     return wr;
 }
 
-int openat(int fd, const char *path, int oflags, ...)
-{
-    errno = ENOSYS;
-    return -1;
+char* atCatPath(int fd, const char *path) {
+    char *atPath;
+    struct stat statbuf;
+
+    /*
+     * assume leading backslash indicates absolute filename
+     */
+    if (fd == AT_FDCWD || path[0] == '/') return NULL;
+
+    if (fstat(fd, &statbuf) != 0) {
+        errno = EBADF;
+        return (char *)-1;
+    }
+    if (!S_ISDIR(statbuf.st_mode)) {
+        errno = ENOTDIR;
+        return (char *)-1;
+    }
+
+    atPath = malloc(PATH_MAX + 1);
+
+    if (atPath) {
+        ioctl(fd, FIOGETNAME, atPath);
+        strcat_s(atPath, PATH_MAX, "/");
+        strcat_s(atPath, PATH_MAX, path);
+    }
+    return atPath;
 }
 
-ssize_t readlinkat(int dirfd, const char *restrict pathname,
-                        char *restrict buf, size_t bufsiz) {
-    errno = ENOSYS;
-    return -1;
+int openat(int dirfd, const char *path, int oflag, ...) {
+    int ret;
+    int mode;
+    va_list vaList;
+    char *newPath = atCatPath(dirfd, path);
+
+    if (newPath == (char *)(-1)) return -1;
+
+    va_start(vaList, oflag);
+    mode = va_arg(vaList, int);
+    va_end(vaList);
+
+    if (newPath == NULL) return open(path, oflag, mode);
+
+    ret = open(newPath, oflag, mode);
+    free(newPath);
+    return ret;
 }
 
-int mkdirat(int dirfd, const char *pathname, mode_t mode) {
-    errno = ENOSYS;
-    return -1;
+ssize_t readlinkat(int fd, const char *path, char *buf, size_t bufsize) {
+    ssize_t ret;
+    char *newPath = atCatPath(fd, path);
+
+    if (newPath == (char *)(-1)) {
+        return -1;
+    }
+
+    if (newPath == NULL) {
+        return readlink(path, buf, bufsize);
+    }
+
+    ret = readlink(newPath, buf, bufsize);
+    free(newPath);
+
+    return ret;
 }
 
-int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
-    errno = ENOSYS;
-    return -1;
-}
-int symlinkat(const char *target, int newdirfd, const char *linkpath) {
-    errno = ENOSYS;
-    return -1;
+int mkdirat(int fd, const char *path, mode_t mode) {
+    char *newPath = atCatPath(fd, path);
+
+    int res = mkdir(newPath, mode);
+    free(newPath);
+
+    return res;
 }
 
-int fstatat(int fd, const char *restrict path,
-           struct stat *restrict buf, int flag) {
-    errno = ENOSYS;
-    return -1;
+int symlinkat(const char *path1, int fd, const char *path2) {
+    int ret;
+
+    char *newPath = atCatPath(fd, path2);
+
+    if (newPath == (char *)(-1)) return -1;
+
+    if (newPath == NULL) return symlink(path1, newPath);
+
+    ret = symlink(path1, newPath);
+    free(newPath);
+
+    return ret;
 }
 
-DIR *fdopendir(int fd) {
-    errno = ENOSYS;
-    return NULL;
-}
-void seekdir(DIR *dirp, long loc) {
-    errno = ENOSYS;
+int fstatat(int fd, const char *path, struct stat *buf, int flag) {
+    int ret;
+    char *newPath = atCatPath(fd, path);
+
+    if (newPath == (char *)(-1)) {
+        return -1;
+    }
+
+    if (flag == AT_SYMLINK_NOFOLLOW) {
+        if (newPath == NULL) return lstat(path, buf);
+
+        ret = lstat(newPath, buf);
+    } else {
+        if (newPath == NULL) return stat(path, buf);
+
+        ret = stat(newPath, buf);
+    }
+
+    free(newPath);
+
+    return ret;
 }
 
-long telldir(DIR *dirp) {
-    errno = ENOSYS;
-    return -1;
+int unlinkat(int fd, const char *path, int flag) {
+    int res;
+    char *newPath = atCatPath(fd, path);
+
+    if (newPath == (char *)(-1)) {
+        return -1;
+    }
+
+    if (flag == AT_REMOVEDIR) {
+        if (newPath == NULL) res = rmdir(path);
+
+        res = rmdir(newPath);
+    } else {
+        if (newPath == NULL) res = unlink(path);
+
+        res = unlink(newPath);
+    }
+
+    free(newPath);
+
+    return res;
+}
+
+int linkat(int oldfd, const char *oldpath, int newfd, const char *newpath, int flag) {
+    int res;
+    char *path1, *path2;
+    char *realPath1 = NULL;
+
+    char *_path1 = atCatPath(oldfd, oldpath);
+
+    if (_path1 == (char *)(-1)) {
+        return -1;
+    }
+
+    char *_path2 = atCatPath(newfd, newpath);
+
+    if (_path1 == (char *)(-1)) {
+        return -1;
+    }
+
+    if (_path1 == NULL) {
+        path1 = (char *)oldpath;
+    } else {
+        path1 = _path1;
+    }
+
+    if (_path2 == NULL) {
+        path2 = (char *)newpath;
+    } else {
+        path2 = _path2;
+    }
+
+    if (flag == AT_SYMLINK_FOLLOW) {
+        realPath1 = realpath(path1, NULL);
+        res = link(realPath1, path2);
+        free(realPath1);
+    } else {
+        res = link(path1, path2);
+    }
+
+    free(_path1);
+    free(_path2);
+
+    return res;
+}
+
+int utimensat(int fd, const char *path, const struct timespec times[2], int flag) {
+    int res;
+    struct timeval _times[2] = {
+        { times[0].tv_sec, times[0].tv_nsec / 1000 },
+        { times[0].tv_sec, times[0].tv_nsec / 1000 },
+    };
+    char *newPath = atCatPath(fd, path);
+
+    if (newPath == (char *)(-1)) {
+        return -1;
+    }
+
+    if (newPath == NULL) {
+        return utimes(path, _times);
+    }
+
+    res = utimes(newPath, _times);
+
+    free(newPath);
+
+    return res;
+
+}
+
+DIR* fdopendir(int fd) {
+    char *newPath = atCatPath(fd, "");
+
+    DIR *ret = NULL;
+
+    if (newPath == (char *)(-1)) {
+        return NULL;
+    }
+
+    ret = opendir(newPath);
+    free(newPath);
+
+    return ret;
 }
 
 int renameat(int olddirfd, const char *oldpath,
              int newdirfd, const char *newpath) {
-    errno = ENOSYS;
-    return -1;
+    int res;
+    char *path1, *path2;
+
+    char *_path1 = atCatPath(olddirfd, oldpath);
+
+    if (_path1 == (char *)(-1)) {
+        return -1;
+    }
+
+    char *_path2 = atCatPath(newdirfd, newpath);
+
+    if (_path1 == (char *)(-1)) {
+        return -1;
+    }
+
+    if (_path1 == NULL) {
+        path1 = (char *)oldpath;
+    } else {
+        path1 = _path1;
+    }
+
+    if (_path2 == NULL) {
+        path2 = (char *)newpath;
+    } else {
+        path2 = _path2;
+    }
+
+    res = rename(path1, path2);
+
+    free(_path1);
+    free(_path2);
+
+    return res;
 }
 
-int unlinkat(int dirfd, const char *pathname, int flags) {
+void seekdir(DIR *dirp, long loc) {
+    printf("[vxworks/platform_internal.c] %s:%d - errno ENOSYS\n", __FUNCTION__, __LINE__);
     errno = ENOSYS;
-    return -1;
 }
 
-int utimensat(int fd, const char *path, const struct timespec times[2], int flag) {
+long telldir(DIR *dirp) {
+    printf("[vxworks/platform_internal.c] %s:%d - errno ENOSYS\n", __FUNCTION__, __LINE__);
     errno = ENOSYS;
     return -1;
 }
