@@ -640,6 +640,7 @@ fd_determine_type_rights(int fd, __wasi_filetype_t *type,
     }
 
     // Strip off read/write bits based on the access mode.
+#if !defined(__VXWORKS__)
     switch (fcntl(fd, F_GETFL) & O_ACCMODE) {
         case O_RDONLY:
             *rights_base &= ~(__wasi_rights_t)__WASI_RIGHT_FD_WRITE;
@@ -648,6 +649,7 @@ fd_determine_type_rights(int fd, __wasi_filetype_t *type,
             *rights_base &= ~(__wasi_rights_t)__WASI_RIGHT_FD_READ;
             break;
     }
+#endif
     return 0;
 }
 
