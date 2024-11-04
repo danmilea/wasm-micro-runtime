@@ -11,6 +11,10 @@
 #include "platform_api_vmcore.h"
 #include "platform_api_extension.h"
 
+#if defined(__VXWORKS__)
+extern int pthread_setname_np          (pthread_t thread, const char *name);
+#endif
+
 #if defined(__APPLE__) || defined(__MACH__)
 #include <TargetConditionals.h>
 #endif
