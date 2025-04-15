@@ -2257,7 +2257,7 @@ wasm_module_new_ex(wasm_store_t *store, wasm_byte_vec_t *binary, LoadArgs *args)
     if (!store || !binary || binary->size == 0 || binary->size > UINT32_MAX)
         goto quit;
 
-    /* whether the combination of compilation flags are compatable with the
+    /* whether the combination of compilation flags are compatible with the
      * package type */
     {
         PackageType pkg_type;
@@ -3330,6 +3330,7 @@ argv_to_results(const uint32 *argv, const wasm_valtype_vec_t *result_defs,
                 break;
 #if WASM_ENABLE_GC == 0 && WASM_ENABLE_REF_TYPES != 0
             case WASM_EXTERNREF:
+            case WASM_FUNCREF:
                 result->of.ref = (struct wasm_ref_t *)(*(uintptr_t *)argv);
                 argv += sizeof(uintptr_t) / sizeof(uint32);
                 break;
@@ -3441,6 +3442,8 @@ wasm_func_call(const wasm_func_t *func, const wasm_val_vec_t *params,
     if (result_count) {
         if (!argv_to_results(argv, wasm_functype_results(func->type),
                              results)) {
+            wasm_runtime_set_exception(func->inst_comm_rt,
+                                       "argv_to_results failed");
             goto failed;
         }
         results->num_elems = result_count;

@@ -7,7 +7,6 @@
 #include "bh_log.h"
 #include "bh_platform.h"
 
-#if WASM_ENABLE_LINUX_PERF != 0
 struct func_info {
     uint32 idx;
     void *ptr;
@@ -90,12 +89,12 @@ aot_create_perf_map(const AOTModule *module, char *error_buf,
     for (i = 0; i < module->func_count; i++) {
         memset(perf_map_info, 0, 128);
         if (strlen(module_name) > 0)
-            snprintf(perf_map_info, 128, "%lx  %x  [%s]#aot_func#%u\n",
+            snprintf(perf_map_info, 128, PRIxPTR "  %x  [%s]#aot_func#%u\n",
                      (uintptr_t)sorted_func_ptrs[i].ptr,
                      get_func_size(module, sorted_func_ptrs, i), module_name,
                      sorted_func_ptrs[i].idx);
         else
-            snprintf(perf_map_info, 128, "%lx  %x  aot_func#%u\n",
+            snprintf(perf_map_info, 128, PRIxPTR "  %x  aot_func#%u\n",
                      (uintptr_t)sorted_func_ptrs[i].ptr,
                      get_func_size(module, sorted_func_ptrs, i),
                      sorted_func_ptrs[i].idx);
@@ -117,4 +116,3 @@ quit:
 
     return ret;
 }
-#endif /* WASM_ENABLE_LINUX_PERF != 0 */

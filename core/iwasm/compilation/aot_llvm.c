@@ -1720,7 +1720,7 @@ aot_create_stack_sizes(const AOTCompData *comp_data, AOTCompContext *comp_ctx)
          * This value is a placeholder, which will be replaced
          * after the corresponding functions are compiled.
          *
-         * Don't use zeros becasue LLVM can optimize them to
+         * Don't use zeros because LLVM can optimize them to
          * zeroinitializer.
          */
         values[i] = I32_NEG_ONE;
@@ -2354,7 +2354,7 @@ create_target_machine_detect_host(AOTCompContext *comp_ctx)
     }
 
     if (!LLVMTargetHasJIT(target)) {
-        aot_set_last_error("unspported JIT on this platform.");
+        aot_set_last_error("unsupported JIT on this platform.");
         goto fail;
     }
 
@@ -2746,10 +2746,6 @@ aot_create_comp_context(const AOTCompData *comp_data, aot_comp_option_t option)
         /* verify external llc compiler */
         comp_ctx->external_llc_compiler = getenv("WAMRC_LLC_COMPILER");
         if (comp_ctx->external_llc_compiler) {
-#if defined(_WIN32) || defined(_WIN32_)
-            comp_ctx->external_llc_compiler = NULL;
-            LOG_WARNING("External LLC compiler not supported on Windows.");
-#else
             if (access(comp_ctx->external_llc_compiler, X_OK) != 0) {
                 LOG_WARNING("WAMRC_LLC_COMPILER [%s] not found, fallback to "
                             "default pipeline",
@@ -2761,17 +2757,12 @@ aot_create_comp_context(const AOTCompData *comp_data, aot_comp_option_t option)
                 LOG_VERBOSE("Using external LLC compiler [%s]",
                             comp_ctx->external_llc_compiler);
             }
-#endif
         }
 
         /* verify external asm compiler */
         if (!comp_ctx->external_llc_compiler) {
             comp_ctx->external_asm_compiler = getenv("WAMRC_ASM_COMPILER");
             if (comp_ctx->external_asm_compiler) {
-#if defined(_WIN32) || defined(_WIN32_)
-                comp_ctx->external_asm_compiler = NULL;
-                LOG_WARNING("External ASM compiler not supported on Windows.");
-#else
                 if (access(comp_ctx->external_asm_compiler, X_OK) != 0) {
                     LOG_WARNING(
                         "WAMRC_ASM_COMPILER [%s] not found, fallback to "
@@ -2784,7 +2775,6 @@ aot_create_comp_context(const AOTCompData *comp_data, aot_comp_option_t option)
                     LOG_VERBOSE("Using external ASM compiler [%s]",
                                 comp_ctx->external_asm_compiler);
                 }
-#endif
             }
         }
 
@@ -3344,6 +3334,11 @@ aot_destroy_comp_context(AOTCompContext *comp_ctx)
     if (comp_ctx->builder)
         LLVMDisposeBuilder(comp_ctx->builder);
 
+#if WASM_ENABLE_DEBUG_AOT != 0
+    if (comp_ctx->debug_builder)
+        LLVMDisposeDIBuilder(comp_ctx->debug_builder);
+#endif
+
     if (comp_ctx->orc_thread_safe_context)
         LLVMOrcDisposeThreadSafeContext(comp_ctx->orc_thread_safe_context);
 
@@ -3417,7 +3412,7 @@ aot_get_native_symbol_index(AOTCompContext *comp_ctx, const char *symbol)
 
     sym = bh_list_first_elem(&comp_ctx->native_symbols);
 
-    /* Lookup an existing symobl record */
+    /* Lookup an existing symbol record */
 
     while (sym) {
         if (strcmp(sym->symbol, symbol) == 0) {

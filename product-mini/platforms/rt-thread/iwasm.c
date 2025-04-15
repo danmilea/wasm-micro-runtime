@@ -192,6 +192,21 @@ my_read_file_to_buffer(char *filename, rt_uint32_t *size)
 {
     struct stat f_stat;
 
+    if (!filename || !size) {
+        rt_set_errno(-EINVAL);
+        return RT_NULL;
+    }
+
+    if (stat(filename, &f_stat) != 0) {
+        rt_set_errno(errno);
+        return RT_NULL;
+    }
+
+    if (f_stat.st_size <= 0) {
+        rt_set_errno(-EINVAL);
+        return RT_NULL;
+    }
+
     rt_uint8_t *buff = rt_malloc(f_stat.st_size);
     *size = 0;
     if (!buff) {
@@ -380,7 +395,7 @@ iwasm(int argc, char **argv)
     else {
         exception = app_instance_main(wasm_module_inst, argc - i_arg_begin,
                                       &argv[i_arg_begin]);
-        rt_kprintf("finshed run app_instance_main\n");
+        rt_kprintf("finished run app_instance_main\n");
     }
 
     if (exception)
@@ -433,4 +448,4 @@ fail1:
     wasm_runtime_destroy();
     return 0;
 }
-MSH_CMD_EXPORT(iwasm, Embeded VM of WebAssembly);
+MSH_CMD_EXPORT(iwasm, Embedded VM of WebAssembly);

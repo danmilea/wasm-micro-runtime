@@ -105,7 +105,8 @@ execute_main(WASMModuleInstanceCommon *module_inst, int32 argc, char *argv[])
     bool ret, is_import_func = true, is_memory64 = false;
 #if WASM_ENABLE_MEMORY64 != 0
     WASMModuleInstance *wasm_module_inst = (WASMModuleInstance *)module_inst;
-    is_memory64 = wasm_module_inst->memories[0]->is_memory64;
+    if (wasm_module_inst->memory_count > 0)
+        is_memory64 = wasm_module_inst->memories[0]->is_memory64;
 #endif
 
     exec_env = wasm_runtime_get_exec_env_singleton(module_inst);
@@ -117,7 +118,7 @@ execute_main(WASMModuleInstanceCommon *module_inst, int32 argc, char *argv[])
 
 #if WASM_ENABLE_LIBC_WASI != 0
     /* In wasi mode, we should call the function named "_start"
-       which initializes the wasi envrionment and then calls
+       which initializes the wasi environment and then calls
        the actual main function. Directly calling main function
        may cause exception thrown. */
     if ((func = wasm_runtime_lookup_wasi_start_function(module_inst))) {
