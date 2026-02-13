@@ -9,6 +9,7 @@
 #include "wasm_export.h"
 #include "aot_export.h"
 
+#include <llvm-c/Core.h>
 #include <llvm-c/Support.h>
 
 #if BH_HAS_DLFCN
@@ -116,6 +117,9 @@ print_help()
     printf("                              Default is host arch, e.g. x86_64\n");
     printf("                            <sub> = for ex. on arm or thumb: v5, v6m, v7a, v7m, etc.\n");
     printf("                            Use --target=help to list supported targets\n");
+    printf("                            Or, provide a triple in the format of <arch>-<vendor>-<os>-<abi>.\n");
+    printf("                            By doing this, --target-abi, --cpu, and --cpu-features will be ignored.\n");
+    printf("                            The triple will only be normalized without any further verification.\n");
     printf("  --target-abi=<abi>        Set the target ABI, e.g. gnu, eabi, gnueabihf, msvc, etc.\n");
     printf("                              Default is gnu if target isn't riscv64 or riscv32\n");
     printf("                              For target riscv64 and riscv32, default is lp64d and ilp32d\n");
@@ -134,9 +138,12 @@ print_help()
     printf("                              3 - Small code model\n");
     printf("  -sgx                      Generate code for SGX platform (Intel Software Guard Extensions)\n");
     printf("  --bounds-checks=1/0       Enable or disable the bounds checks for memory access:\n");
-    printf("                              by default it is disabled in all 64-bit platforms except SGX and\n");
-    printf("                              in these platforms runtime does bounds checks with hardware trap,\n");
-    printf("                              and by default it is enabled in all 32-bit platforms\n");
+    printf("                              This flag controls bounds checking with a software check. \n"); 
+    printf("                              On 64-bit platforms, it is disabled by default, using a hardware \n"); 
+    printf("                              trap if supported, except when SGX or memory64 is enabled,\n"); 
+    printf("                              which defaults to a software check.\n"); 
+    printf("                              On 32-bit platforms, the flag is enabled by default, using a software check\n");
+    printf("                              due to the lack of hardware support.\n"); 
     printf("                            CAVEAT: --bounds-checks=0 enables some optimizations\n");
     printf("                              which make the compiled AOT module incompatible\n");
     printf("                              with a runtime without the hardware bounds checks.\n");
@@ -152,6 +159,8 @@ print_help()
     printf("                              llvmir-unopt   Unoptimized LLVM IR\n");
     printf("                              llvmir-opt     Optimized LLVM IR\n");
     printf("  --disable-bulk-memory     Disable the MVP bulk memory feature\n");
+    printf("  --enable-bulk-memory-opt  Enable bulk memory opt feature\n");
+    printf("  --enable-extended-const   Enable extended const expr feature\n");
     printf("  --enable-multi-thread     Enable multi-thread feature, the dependent features bulk-memory and\n");
     printf("                            thread-mgr will be enabled automatically\n");
     printf("  --enable-tail-call        Enable the post-MVP tail call feature\n");
@@ -160,13 +169,16 @@ print_help()
     printf("                              and by default it is enabled in them and disabled in other targets\n");
     printf("  --disable-ref-types       Disable the MVP reference types feature, it will be disabled forcibly if\n");
     printf("                              GC is enabled\n");
+    printf("  --enable-call-indirect-overlong\n");
+    printf("                            Enable call indirect overlong feature\n");
+    printf("  --enable-lime1            Enable Lime1\n");
     printf("  --disable-aux-stack-check Disable auxiliary stack overflow/underflow check\n");
     printf("  --enable-dump-call-stack  Enable stack trace feature\n");
     printf("  --call-stack-features=<features>\n");
     printf("                            A comma-separated list of features when generating call stacks.\n");
     printf("                            By default, all features are enabled. To disable all features,\n");
     printf("                            provide an empty list (i.e. --call-stack-features=). This flag\n");
-    printf("                            only only takes effect when --enable-dump-call-stack is set.\n");
+    printf("                            only takes effect when --enable-dump-call-stack is set.\n");
     printf("                            Available features: bounds-checks, ip, func-idx, trap-ip, values.\n");
     printf("  --enable-perf-profiling   Enable function performance profiling\n");
     printf("  --enable-memory-profiling Enable memory usage profiling\n");
@@ -180,6 +192,7 @@ print_help()
     printf("                            Available flags: all, i32.common, i64.common, f32.common, f64.common,\n");
     printf("                              i32.clz, i32.ctz, etc, refer to doc/xip.md for full list\n");
     printf("                            Use comma to separate, please refer to doc/xip.md for full list.\n");
+    printf("  --disable-llvm-jump-tables Disable the LLVM jump tables similarly to clang's -fno-jump-tables\n");
     printf("  --disable-llvm-lto        Disable the LLVM link time optimization\n");
     printf("  --enable-llvm-pgo         Enable LLVM PGO (Profile-Guided Optimization)\n");
     printf("  --enable-llvm-passes=<passes>\n");
@@ -206,9 +219,12 @@ print_help()
     printf("  --enable-linux-perf       Enable linux perf support\n");
 #endif
     printf("  --mllvm=<option>          Add the LLVM command line option\n");
-    printf("  --enable-shared-heap      Enable shared heap feature\n");
+    printf("  --enable-shared-heap      Enable shared heap feature, assuming only one shared heap will be attached\n");
+    printf("  --enable-shared-chain     Enable shared heap chain feature, works for more than one shared heap\n");
+    printf("                            WARNING: enable this feature will largely increase code size\n");
     printf("  -v=n                      Set log verbose level (0 to 5, default is 2), larger with more log\n");
     printf("  --version                 Show version information\n");
+    printf("  --llvm-version            Show LLVM version information\n");
     printf("Examples: wamrc -o test.aot test.wasm\n");
     printf("          wamrc --target=i386 -o test.aot test.wasm\n");
     printf("          wamrc --target=i386 --format=object -o test.o test.wasm\n");
@@ -230,7 +246,7 @@ print_help()
  * Based on: http://stackoverflow.com/a/11198630/471795
  */
 static char **
-split_string(char *str, int *count, const char *delimer)
+split_string(char *str, int *count, const char *delimiter)
 {
     char **res = NULL, **res1;
     char *p;
@@ -238,7 +254,7 @@ split_string(char *str, int *count, const char *delimer)
 
     /* split string and append tokens to 'res' */
     do {
-        p = strtok(str, delimer);
+        p = strtok(str, delimiter);
         str = NULL;
         res1 = res;
         res = (char **)realloc(res1, sizeof(char *) * (uint32)(idx + 1));
@@ -412,8 +428,12 @@ main(int argc, char *argv[])
     option.enable_simd = true;
     option.enable_aux_stack_check = true;
     option.enable_bulk_memory = true;
+    option.enable_bulk_memory_opt = false;
     option.enable_ref_types = true;
+    option.enable_call_indirect_overlong = false;
     option.enable_gc = false;
+    option.enable_extended_const = false;
+    option.enable_lime1 = false;
     aot_call_stack_features_init_default(&option.call_stack_features);
 
     /* Process options */
@@ -507,6 +527,9 @@ main(int argc, char *argv[])
         else if (!strcmp(argv[0], "--disable-bulk-memory")) {
             option.enable_bulk_memory = false;
         }
+        else if (!strcmp(argv[0], "--enable-bulk-memory-opt")) {
+            option.enable_bulk_memory_opt = true;
+        }
         else if (!strcmp(argv[0], "--enable-multi-thread")) {
             option.enable_bulk_memory = true;
             option.enable_thread_mgr = true;
@@ -524,8 +547,17 @@ main(int argc, char *argv[])
         else if (!strcmp(argv[0], "--disable-ref-types")) {
             option.enable_ref_types = false;
         }
+        else if (!strcmp(argv[0], "--enable-call-indirect-overlong")) {
+            option.enable_call_indirect_overlong = true;
+        }
         else if (!strcmp(argv[0], "--disable-aux-stack-check")) {
             option.enable_aux_stack_check = false;
+        }
+        else if (!strcmp(argv[0], "--enable-extended-const")) {
+            option.enable_extended_const = true;
+        }
+        else if (!strcmp(argv[0], "--enable-lime1")) {
+            option.enable_lime1 = true;
         }
         else if (!strcmp(argv[0], "--enable-dump-call-stack")) {
             option.aux_stack_frame_type = AOT_STACK_FRAME_TYPE_STANDARD;
@@ -569,6 +601,9 @@ main(int argc, char *argv[])
             if (argv[0][28] == '\0')
                 PRINT_HELP_AND_EXIT();
             option.builtin_intrinsics = argv[0] + 28;
+        }
+        else if (!strcmp(argv[0], "--disable-llvm-jump-tables")) {
+            option.disable_llvm_jump_tables = true;
         }
         else if (!strcmp(argv[0], "--disable-llvm-lto")) {
             option.disable_llvm_lto = true;
@@ -651,10 +686,19 @@ main(int argc, char *argv[])
         else if (!strcmp(argv[0], "--enable-shared-heap")) {
             option.enable_shared_heap = true;
         }
+        else if (!strcmp(argv[0], "--enable-shared-chain")) {
+            option.enable_shared_chain = true;
+        }
         else if (!strcmp(argv[0], "--version")) {
             uint32 major, minor, patch;
             wasm_runtime_get_version(&major, &minor, &patch);
             printf("wamrc %u.%u.%u\n", major, minor, patch);
+            return 0;
+        }
+        else if (!strcmp(argv[0], "--llvm-version")) {
+            unsigned major, minor, patch;
+            LLVMGetVersion(&major, &minor, &patch);
+            printf("LLVM %u.%u.%u\n", major, minor, patch);
             return 0;
         }
         else
@@ -705,12 +749,33 @@ main(int argc, char *argv[])
     }
 
     if (sgx_mode) {
-        option.size_level = 1;
+        option.size_level = 0;
         option.is_sgx_platform = true;
     }
 
     if (option.enable_gc) {
         option.enable_ref_types = false;
+    }
+
+    if (option.enable_shared_chain) {
+        LOG_VERBOSE("Enable shared chain will overwrite shared heap and sw "
+                    "bounds control");
+        option.enable_shared_heap = false;
+        option.bounds_checks = true;
+    }
+
+    if (option.enable_bulk_memory) {
+        option.enable_bulk_memory_opt = true;
+    }
+
+    if (option.enable_ref_types) {
+        option.enable_call_indirect_overlong = true;
+    }
+
+    if (option.enable_lime1) {
+        option.enable_call_indirect_overlong = true;
+        option.enable_bulk_memory_opt = true;
+        option.enable_extended_const = true;
     }
 
     if (!use_dummy_wasm) {

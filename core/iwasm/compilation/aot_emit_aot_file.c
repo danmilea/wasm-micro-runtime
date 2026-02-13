@@ -48,7 +48,7 @@ typedef struct AOTSymbolList {
 } AOTSymbolList;
 
 /* AOT object data */
-typedef struct AOTObjectData {
+struct AOTObjectData {
     AOTCompContext *comp_ctx;
 
     LLVMMemoryBufferRef mem_buf;
@@ -82,7 +82,7 @@ typedef struct AOTObjectData {
     const char *stack_sizes_section_name;
     uint32 stack_sizes_offset;
     uint32 *stack_sizes;
-} AOTObjectData;
+};
 
 #if 0
 static void dump_buf(uint8 *buf, uint32 size, char *title)
@@ -216,7 +216,7 @@ get_init_expr_size(const AOTCompContext *comp_ctx, const AOTCompData *comp_data,
 #if WASM_ENABLE_GC != 0
     WASMModule *module = comp_data->wasm_module;
 #endif
-
+    bh_assert(expr != NULL);
     /* + init value size */
     switch (expr->init_expr_type) {
         case INIT_EXPR_NONE:
@@ -248,7 +248,7 @@ get_init_expr_size(const AOTCompContext *comp_ctx, const AOTCompData *comp_data,
         {
             uint32 i;
             WASMStructNewInitValues *struct_new_init_values =
-                (WASMStructNewInitValues *)expr->u.data;
+                (WASMStructNewInitValues *)expr->u.unary.v.data;
 
             /* type_index + field_count + fields */
             size += sizeof(uint32) + sizeof(uint32);
@@ -285,7 +285,7 @@ get_init_expr_size(const AOTCompContext *comp_ctx, const AOTCompData *comp_data,
         case INIT_EXPR_TYPE_ARRAY_NEW_FIXED:
         {
             WASMArrayNewInitValues *array_new_init_values =
-                (WASMArrayNewInitValues *)expr->u.data;
+                (WASMArrayNewInitValues *)expr->u.unary.v.data;
             WASMArrayType *array_type = NULL;
             uint32 value_count;
 
@@ -302,12 +302,27 @@ get_init_expr_size(const AOTCompContext *comp_ctx, const AOTCompData *comp_data,
 
             /* array_elem_type + type_index + len + elems */
             size += sizeof(uint32) * 3
-                    + wasm_value_type_size_internal(array_type->elem_type,
-                                                    comp_ctx->pointer_size)
+                    + (uint64)wasm_value_type_size_internal(
+                          array_type->elem_type, comp_ctx->pointer_size)
                           * value_count;
             break;
         }
 #endif /* end of WASM_ENABLE_GC != 0 */
+#if WASM_ENABLE_EXTENDED_CONST_EXPR != 0
+        case INIT_EXPR_TYPE_I32_ADD:
+        case INIT_EXPR_TYPE_I32_SUB:
+        case INIT_EXPR_TYPE_I32_MUL:
+        case INIT_EXPR_TYPE_I64_ADD:
+        case INIT_EXPR_TYPE_I64_SUB:
+        case INIT_EXPR_TYPE_I64_MUL:
+        {
+            size +=
+                get_init_expr_size(comp_ctx, comp_data, expr->u.binary.l_expr);
+            size +=
+                get_init_expr_size(comp_ctx, comp_data, expr->u.binary.r_expr);
+            break;
+        }
+#endif
         default:
             bh_assert(0);
     }
@@ -324,14 +339,15 @@ get_table_init_data_size(AOTCompContext *comp_ctx,
     /*
      * mode (4 bytes), elem_type (4 bytes)
      *
-     * table_index(4 bytes) + init expr type (4 bytes) + init expr value (8
-     * bytes)
+     * table_index(4 bytes)
      */
-    size = (uint32)(sizeof(uint32) * 2 + sizeof(uint32) + sizeof(uint32)
-                    + sizeof(uint64))
+    size = (uint32)(sizeof(uint32) * 2 + sizeof(uint32))
            /* Size of WasmRefType - inner padding (ref type + nullable +
               heap_type) */
            + 8;
+
+    size += get_init_expr_size(comp_ctx, comp_ctx->comp_data,
+                               &table_init_data->offset);
 
     /* + value count/func index count (4 bytes) + init_values */
     size += sizeof(uint32);
@@ -920,9 +936,11 @@ get_relocations_size(AOTObjectData *obj_data,
         /* ignore the relocations to aot_func_internal#n in text section
            for windows platform since they will be applied in
            aot_emit_text_section */
+
+        const char *name = relocation->symbol_name;
         if ((!strcmp(relocation_group->section_name, ".text")
              || !strcmp(relocation_group->section_name, ".ltext"))
-            && !strncmp(relocation->symbol_name, AOT_FUNC_INTERNAL_PREFIX,
+            && !strncmp(name, AOT_FUNC_INTERNAL_PREFIX,
                         strlen(AOT_FUNC_INTERNAL_PREFIX))
             && ((!strncmp(obj_data->comp_ctx->target_arch, "x86_64", 6)
                  /* Windows AOT_COFF64_BIN_TYPE */
@@ -1809,6 +1827,10 @@ static bool
 aot_emit_init_expr(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
                    AOTCompContext *comp_ctx, InitializerExpression *expr)
 {
+    if (expr == NULL) {
+        aot_set_last_error("invalid init expr.");
+        return false;
+    }
     uint32 offset = *p_offset;
 #if WASM_ENABLE_GC != 0
     WASMModule *module = comp_ctx->comp_data->wasm_module;
@@ -1822,31 +1844,31 @@ aot_emit_init_expr(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
             break;
         case INIT_EXPR_TYPE_I32_CONST:
         case INIT_EXPR_TYPE_F32_CONST:
-            EMIT_U32(expr->u.i32);
+            EMIT_U32(expr->u.unary.v.i32);
             break;
         case INIT_EXPR_TYPE_I64_CONST:
         case INIT_EXPR_TYPE_F64_CONST:
-            EMIT_U64(expr->u.i64);
+            EMIT_U64(expr->u.unary.v.i64);
             break;
         case INIT_EXPR_TYPE_V128_CONST:
-            EMIT_V128(expr->u.v128);
+            EMIT_V128(expr->u.unary.v.v128);
             break;
         case INIT_EXPR_TYPE_GET_GLOBAL:
-            EMIT_U32(expr->u.global_index);
+            EMIT_U32(expr->u.unary.v.global_index);
             break;
         case INIT_EXPR_TYPE_FUNCREF_CONST:
         case INIT_EXPR_TYPE_REFNULL_CONST:
-            EMIT_U32(expr->u.ref_index);
+            EMIT_U32(expr->u.unary.v.ref_index);
             break;
 #if WASM_ENABLE_GC != 0
         case INIT_EXPR_TYPE_I31_NEW:
-            EMIT_U32(expr->u.i32);
+            EMIT_U32(expr->u.unary.v.i32);
             break;
         case INIT_EXPR_TYPE_STRUCT_NEW:
         {
             uint32 i;
             WASMStructNewInitValues *init_values =
-                (WASMStructNewInitValues *)expr->u.data;
+                (WASMStructNewInitValues *)expr->u.unary.v.data;
             WASMStructType *struct_type = NULL;
 
             EMIT_U32(init_values->type_idx);
@@ -1877,21 +1899,21 @@ aot_emit_init_expr(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
             break;
         }
         case INIT_EXPR_TYPE_STRUCT_NEW_DEFAULT:
-            EMIT_U32(expr->u.type_index);
+            EMIT_U32(expr->u.unary.v.type_index);
             break;
         case INIT_EXPR_TYPE_ARRAY_NEW_DEFAULT:
         {
             WASMArrayType *array_type = NULL;
 
-            bh_assert(expr->u.array_new_default.type_index
+            bh_assert(expr->u.unary.v.array_new_default.type_index
                       < module->type_count);
             array_type =
                 (WASMArrayType *)
-                    module->types[expr->u.array_new_default.type_index];
+                    module->types[expr->u.unary.v.array_new_default.type_index];
 
             EMIT_U32(array_type->elem_type);
-            EMIT_U32(expr->u.array_new_default.type_index);
-            EMIT_U32(expr->u.array_new_default.length);
+            EMIT_U32(expr->u.unary.v.array_new_default.type_index);
+            EMIT_U32(expr->u.unary.v.array_new_default.length);
             break;
         }
         case INIT_EXPR_TYPE_ARRAY_NEW:
@@ -1899,7 +1921,7 @@ aot_emit_init_expr(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
         {
             uint32 value_count, i, field_size;
             WASMArrayNewInitValues *init_values =
-                (WASMArrayNewInitValues *)expr->u.data;
+                (WASMArrayNewInitValues *)expr->u.unary.v.data;
             WASMArrayType *array_type = NULL;
 
             bh_assert(init_values->type_idx < module->type_count);
@@ -1931,6 +1953,25 @@ aot_emit_init_expr(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
             break;
         }
 #endif /* end of WASM_ENABLE_GC != 0 */
+#if WASM_ENABLE_EXTENDED_CONST_EXPR != 0
+        case INIT_EXPR_TYPE_I32_ADD:
+        case INIT_EXPR_TYPE_I32_SUB:
+        case INIT_EXPR_TYPE_I32_MUL:
+        case INIT_EXPR_TYPE_I64_ADD:
+        case INIT_EXPR_TYPE_I64_SUB:
+        case INIT_EXPR_TYPE_I64_MUL:
+            if (comp_ctx->enable_extended_const) {
+                if (!aot_emit_init_expr(buf, buf_end, &offset, comp_ctx,
+                                        expr->u.binary.l_expr)) {
+                    return false;
+                }
+                if (!aot_emit_init_expr(buf, buf_end, &offset, comp_ctx,
+                                        expr->u.binary.r_expr)) {
+                    return false;
+                }
+            }
+            break;
+#endif
         default:
             aot_set_last_error("invalid init expr type.");
             return false;
@@ -2032,8 +2073,10 @@ aot_emit_table_info(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
         EMIT_U32(init_datas[i]->mode);
         EMIT_U32(init_datas[i]->elem_type);
         EMIT_U32(init_datas[i]->table_index);
-        EMIT_U32(init_datas[i]->offset.init_expr_type);
-        EMIT_U64(init_datas[i]->offset.u.i64);
+        if (!aot_emit_init_expr(buf, buf_end, &offset, comp_ctx,
+                                &init_datas[i]->offset))
+            return false;
+
 #if WASM_ENABLE_GC != 0
         if (comp_ctx->enable_gc && init_datas[i]->elem_ref_type) {
             EMIT_U16(init_datas[i]->elem_ref_type->ref_ht_common.ref_type);
@@ -2489,8 +2532,8 @@ aot_emit_text_section(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
                 relocation_count = relocation_group->relocation_count;
                 for (j = 0; j < relocation_count; j++) {
                     /* relocation to aot_func_internal#n */
-                    if (str_starts_with(relocation->symbol_name,
-                                        AOT_FUNC_INTERNAL_PREFIX)
+                    const char *name = relocation->symbol_name;
+                    if (str_starts_with(name, AOT_FUNC_INTERNAL_PREFIX)
                         && ((obj_data->target_info.bin_type
                                  == 6 /* AOT_COFF64_BIN_TYPE */
                              && relocation->relocation_type
@@ -2500,8 +2543,7 @@ aot_emit_text_section(uint8 *buf, uint8 *buf_end, uint32 *p_offset,
                                 && relocation->relocation_type
                                        == 20 /* IMAGE_REL_I386_REL32 */))) {
                         uint32 func_idx =
-                            atoi(relocation->symbol_name
-                                 + strlen(AOT_FUNC_INTERNAL_PREFIX));
+                            atoi(name + strlen(AOT_FUNC_INTERNAL_PREFIX));
                         uint64 text_offset, reloc_offset, reloc_addend;
 
                         bh_assert(func_idx < obj_data->func_count);
@@ -3052,6 +3094,27 @@ typedef struct elf64_rela {
 #define SET_TARGET_INFO_FIELD(f, v, type, little) \
     SET_TARGET_INFO_VALUE(f, elf_header->v, type, little)
 
+/* in windows 32, the symbol name may start with '_' */
+static char *
+LLVMGetSymbolNameAndUnDecorate(LLVMSymbolIteratorRef si,
+                               AOTTargetInfo target_info)
+{
+    char *original_name = (char *)LLVMGetSymbolName(si);
+    if (!original_name) {
+        return NULL;
+    }
+
+    if (target_info.bin_type != AOT_COFF32_BIN_TYPE) {
+        return original_name;
+    }
+
+    if (*original_name == '_') {
+        return ++original_name;
+    }
+
+    return original_name;
+}
+
 static bool
 aot_resolve_target_info(AOTCompContext *comp_ctx, AOTObjectData *obj_data)
 {
@@ -3248,8 +3311,17 @@ is_data_section(AOTObjectData *obj_data, LLVMSectionIteratorRef sec_itr,
 
     return (!strcmp(section_name, ".data") || !strcmp(section_name, ".sdata")
             || !strcmp(section_name, ".rodata")
+#if LLVM_VERSION_MAJOR >= 19
+            /* https://github.com/llvm/llvm-project/pull/82214 */
+            || !strcmp(section_name, ".srodata")
+#endif
             /* ".rodata.cst4/8/16/.." */
             || !strncmp(section_name, ".rodata.cst", strlen(".rodata.cst"))
+#if LLVM_VERSION_MAJOR >= 19
+            /* https://github.com/llvm/llvm-project/pull/82214
+             * ".srodata.cst4/8/16/.." */
+            || !strncmp(section_name, ".srodata.cst", strlen(".srodata.cst"))
+#endif
             /* ".rodata.strn.m" */
             || !strncmp(section_name, ".rodata.str", strlen(".rodata.str"))
             || (!strcmp(section_name, ".rdata")
@@ -3346,6 +3418,12 @@ aot_resolve_object_data_sections(AOTObjectData *obj_data)
                     }
                     bh_memcpy_s(data_section->name, size, buf, size);
                     data_section->is_name_allocated = true;
+                }
+                else if (obj_data->comp_ctx->enable_llvm_pgo
+                         && !strcmp(name, "__llvm_prf_bits")) {
+                    LOG_WARNING("__llvm_prf_bits section is not supported and "
+                                "shouldn't be used in PGO.");
+                    return false;
                 }
 
                 if (obj_data->comp_ctx->enable_llvm_pgo
@@ -3526,12 +3604,9 @@ aot_resolve_stack_sizes(AOTCompContext *comp_ctx, AOTObjectData *obj_data)
     }
 
     while (!LLVMObjectFileIsSymbolIteratorAtEnd(obj_data->binary, sym_itr)) {
-        if ((name = LLVMGetSymbolName(sym_itr))
-            && (!strcmp(name, aot_stack_sizes_alias_name)
-                /* symbol of COFF32 starts with "_" */
-                || (obj_data->target_info.bin_type == AOT_COFF32_BIN_TYPE
-                    && !strncmp(name, "_", 1)
-                    && !strcmp(name + 1, aot_stack_sizes_alias_name)))) {
+        if ((name =
+                 LLVMGetSymbolNameAndUnDecorate(sym_itr, obj_data->target_info))
+            && (!strcmp(name, aot_stack_sizes_alias_name))) {
 #if 0 /* cf. https://github.com/llvm/llvm-project/issues/67765 */
             uint64 sz = LLVMGetSymbolSize(sym_itr);
             if (sz != sizeof(uint32) * obj_data->func_count
@@ -3695,8 +3770,8 @@ aot_resolve_functions(AOTCompContext *comp_ctx, AOTObjectData *obj_data)
     }
 
     while (!LLVMObjectFileIsSymbolIteratorAtEnd(obj_data->binary, sym_itr)) {
-        if ((name = (char *)LLVMGetSymbolName(sym_itr))
-            && str_starts_with(name, prefix)) {
+        name = LLVMGetSymbolNameAndUnDecorate(sym_itr, obj_data->target_info);
+        if (name && str_starts_with(name, prefix)) {
             /* symbol aot_func#n */
             func_index = (uint32)atoi(name + strlen(prefix));
             if (func_index < obj_data->func_count) {
@@ -3734,8 +3809,7 @@ aot_resolve_functions(AOTCompContext *comp_ctx, AOTObjectData *obj_data)
                 }
             }
         }
-        else if ((name = (char *)LLVMGetSymbolName(sym_itr))
-                 && str_starts_with(name, AOT_FUNC_INTERNAL_PREFIX)) {
+        else if (name && str_starts_with(name, AOT_FUNC_INTERNAL_PREFIX)) {
             /* symbol aot_func_internal#n */
             func_index = (uint32)atoi(name + strlen(AOT_FUNC_INTERNAL_PREFIX));
             if (func_index < obj_data->func_count) {
@@ -3883,7 +3957,8 @@ aot_resolve_object_relocation_group(AOTObjectData *obj_data,
 
         /* set relocation fields */
         relocation->relocation_type = (uint32)type;
-        relocation->symbol_name = (char *)LLVMGetSymbolName(rel_sym);
+        relocation->symbol_name =
+            LLVMGetSymbolNameAndUnDecorate(rel_sym, obj_data->target_info);
         relocation->relocation_offset = offset;
         if (!strcmp(group->section_name, ".rela.text.unlikely.")
             || !strcmp(group->section_name, ".rel.text.unlikely.")) {
@@ -3910,12 +3985,7 @@ aot_resolve_object_relocation_group(AOTObjectData *obj_data,
          * Note: aot_stack_sizes_section_name section only contains
          * stack_sizes table.
          */
-        if (!strcmp(relocation->symbol_name, aot_stack_sizes_name)
-            /* in windows 32, the symbol name may start with '_' */
-            || (strlen(relocation->symbol_name) > 0
-                && relocation->symbol_name[0] == '_'
-                && !strcmp(relocation->symbol_name + 1,
-                           aot_stack_sizes_name))) {
+        if (!strcmp(relocation->symbol_name, aot_stack_sizes_name)) {
             /* discard const */
             relocation->symbol_name = (char *)aot_stack_sizes_section_name;
         }
@@ -3984,8 +4054,21 @@ aot_resolve_object_relocation_group(AOTObjectData *obj_data,
             && (str_starts_with(relocation->symbol_name, ".LCPI")
                 || str_starts_with(relocation->symbol_name, ".LJTI")
                 || str_starts_with(relocation->symbol_name, ".LBB")
-                || str_starts_with(relocation->symbol_name,
-                                   ".Lswitch.table."))) {
+                || str_starts_with(relocation->symbol_name, ".Lswitch.table.")
+#if LLVM_VERSION_MAJOR >= 16
+                /* cf. https://reviews.llvm.org/D123264 */
+                || str_starts_with(relocation->symbol_name, ".Lpcrel_hi")
+#endif
+#if LLVM_VERSION_MAJOR >= 19
+                /* cf.
+                 * https://github.com/llvm/llvm-project/pull/95031
+                 * https://github.com/llvm/llvm-project/pull/89693
+                 *
+                 * note: the trailing space in ".L0 " is intentional. */
+                || !strcmp(relocation->symbol_name, "")
+                || !strcmp(relocation->symbol_name, ".L0 ")
+#endif
+                    )) {
             /* change relocation->relocation_addend and
                relocation->symbol_name */
             LLVMSectionIteratorRef contain_section;

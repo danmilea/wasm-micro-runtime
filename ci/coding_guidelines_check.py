@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 import argparse
-import re
 from pathlib import Path
 import re
 import shlex
@@ -13,8 +12,8 @@ import subprocess
 import sys
 import unittest
 
-CLANG_FORMAT_CMD = "clang-format-12"
-GIT_CLANG_FORMAT_CMD = "git-clang-format-12"
+CLANG_FORMAT_CMD = "clang-format-14"
+GIT_CLANG_FORMAT_CMD = "git-clang-format-14"
 
 # glob style patterns
 EXCLUDE_PATHS = [
@@ -32,14 +31,14 @@ EXCLUDE_PATHS = [
     "**/tests/wamr-test-suites/workspace/*",
 ]
 
-C_SUFFIXES = [".c", ".cpp", ".h"]
+C_SUFFIXES = [".c", ".cc", ".cpp", ".h"]
 INVALID_DIR_NAME_SEGMENT = r"([a-zA-Z0-9]+\_[a-zA-Z0-9]+)"
 INVALID_FILE_NAME_SEGMENT = r"([a-zA-Z0-9]+\-[a-zA-Z0-9]+)"
 
 
 def locate_command(command: str) -> bool:
     if not shutil.which(command):
-        print(f"Command '{command}'' not found")
+        print(f"Command '{command}' not found")
         return False
 
     return True
@@ -93,20 +92,29 @@ def run_clang_format(file_path: Path, root: Path) -> bool:
 
 def run_clang_format_diff(root: Path, commits: str) -> bool:
     """
-    Use `clang-format-12` or `git-clang-format-12` to check code format of
+    Use `clang-format-14` or `git-clang-format-14` to check code format of
     the PR, with a commit range specified. It is required to format the
     code before committing the PR, or it might fail to pass the CI check:
 
-    1. Install clang-format-12.0.0
-    Normally we can install it by `sudo apt-get install clang-format-12`,
-    or download the `clang+llvm-12.0.0-xxx-tar.xz` package from
-      https://github.com/llvm/llvm-project/releases/tag/llvmorg-12.0.0
-    and install it
+    1. Install clang-format-14.0.0
+
+    You can download the package from
+    https://github.com/llvm/llvm-project/releases
+    and install it.
+
+    For Debian/Ubuntu, we can probably use
+    `sudo apt-get install clang-format-14`.
+
+    Homebrew has it as a part of llvm@14.
+    ```shell
+    brew install llvm@14
+    /usr/local/opt/llvm@14/bin/clang-format
+    ```
 
     2. Format the C/C++ source file
     ``` shell
     cd path/to/wamr/root
-    clang-format-12 --style file -i path/to/file
+    clang-format-14 --style file -i path/to/file
     ```
 
     The code wrapped by `/* clang-format off */` and `/* clang-format on */`
@@ -151,7 +159,7 @@ def run_clang_format_diff(root: Path, commits: str) -> bool:
                 found = True
         else:
             return not found
-    except subprocess.subprocess.CalledProcessError:
+    except subprocess.CalledProcessError:
         return False
 
 
@@ -175,12 +183,14 @@ def check_file_name(path: Path) -> bool:
     - docker-compose
     - package-lock
     - vite-env.d
+    - .clang-tidy (standard config file for Clang-Tidy)
     """
     if path.stem in [
         "docker-compose",
         "package-lock",
         "vite-env.d",
         "osv-scanner",
+        ".clang-tidy",
     ]:
         return True
 

@@ -1,14 +1,14 @@
 # Copyright (C) 2019 Intel Corporation.  All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-cmake_minimum_required(VERSION 2.9)
+cmake_minimum_required(VERSION 3.14)
 
 project (test-aot-stack-frame)
 
 add_definitions (-DRUN_ON_LINUX)
 
 set (WAMR_BUILD_AOT 1)
-set (WAMR_BUILD_INTERP 0)
+set (WAMR_BUILD_INTERP 1)
 set (WAMR_BUILD_JIT 0)
 set (WAMR_BUILD_SIMD 1)
 set (WAMR_BUILD_REF_TYPES 1)
@@ -17,8 +17,13 @@ set (WAMR_BUILD_LIBC_BUILTIN 0)
 set (WAMR_BUILD_MULTI_MODULE 0)
 set (WAMR_DISABLE_HW_BOUND_CHECK 1)
 set (WAMR_DISABLE_WRITE_GS_BASE 1)
+set (WAMR_BUILD_GC 1)
 
 include (../unit_common.cmake)
+
+find_package(LLVM REQUIRED CONFIG)
+include_directories(${LLVM_INCLUDE_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
 
 include_directories (${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -31,16 +36,10 @@ file (GLOB_RECURSE source_all ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
 set (UNIT_SOURCE ${source_all})
 
 set (unit_test_sources
-     ${UNIT_SOURCE}
-     ${PLATFORM_SHARED_SOURCE}
-     ${UTILS_SHARED_SOURCE}
-     ${MEM_ALLOC_SHARED_SOURCE}
-     ${NATIVE_INTERFACE_SOURCE}
-     ${IWASM_COMMON_SOURCE}
-     ${IWASM_INTERP_SOURCE}
-     ${IWASM_AOT_SOURCE}
-     ${WASM_APP_LIB_SOURCE_ALL}
-    )
+  ${UNIT_SOURCE}
+  ${WAMR_RUNTIME_LIB_SOURCE}
+  ${IWASM_COMPL_SOURCE}
+)
 
 # Automatically build wasm-apps for this test
 add_subdirectory(wasm-apps)
@@ -52,4 +51,4 @@ add_dependencies (aot_stack_frame_test aot-stack-frame-test-wasm)
 
 target_link_libraries (aot_stack_frame_test ${LLVM_AVAILABLE_LIBS} gtest_main )
 
-#gtest_discover_tests(aot_stack_frame_test)
+gtest_discover_tests(aot_stack_frame_test)

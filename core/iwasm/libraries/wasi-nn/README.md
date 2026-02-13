@@ -26,6 +26,7 @@ $ cmake -DWAMR_BUILD_WASI_NN=1 <other options> ...
 - `WAMR_BUILD_WASI_NN_TFLITE`. This option designates TensorFlow Lite as the backend.
 - `WAMR_BUILD_WASI_NN_OPENVINO`. This option designates OpenVINO as the backend.
 - `WAMR_BUILD_WASI_NN_LLAMACPP`. This option designates Llama.cpp as the backend.
+- `WAMR_BUILD_WASI_NN_ONNX`. This option designates ONNX Runtime as the backend.
 
 ### Wasm
 
@@ -37,7 +38,7 @@ There is a big difference between the two sets of functions, `tensor_type`.
 
 ```c
 #if WASM_ENABLE_WASI_EPHEMERAL_NN != 0
-typedef enum { fp16 = 0, fp32, fp64, bf16, u8, i32, i64 } tensor_type;
+typedef enum { fp16 = 0, fp32, fp64, u8, i32, i64 } tensor_type;
 #else
 typedef enum { fp16 = 0, fp32, up8, ip32 } tensor_type;
 #endif /* WASM_ENABLE_WASI_EPHEMERAL_NN != 0 */
@@ -151,7 +152,7 @@ docker run \
 
 Supported:
 
-- Graph encoding: `tensorflowlite`, `openvino` and `ggml`
+- Graph encoding: `tensorflowlite`, `openvino`, `ggml` and `onnx`
 - Execution target: `cpu` for all. `gpu` and `tpu` for `tensorflowlite`.
 - Tensor type: `fp32`.
 

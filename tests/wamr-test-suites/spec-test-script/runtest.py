@@ -46,7 +46,8 @@ temp_module_table = {}
 aot_target_options_map = {
     "i386": ["--target=i386"],
     "x86_32": ["--target=i386"],
-    "x86_64": ["--target=x86_64", "--cpu=skylake"],
+    # cf. https://github.com/bytecodealliance/wasm-micro-runtime/issues/3035
+    "x86_64": ["--target=x86_64", "--cpu=skylake", "--size-level=0"],
     "aarch64": ["--target=aarch64", "--target-abi=eabi", "--cpu=cortex-a53"],
     "aarch64_vfp": ["--target=aarch64", "--target-abi=gnueabihf", "--cpu=cortex-a53"],
     "armv7": ["--target=armv7", "--target-abi=eabi", "--cpu=cortex-a9", "--cpu-features=-neon"],
@@ -334,6 +335,9 @@ parser.add_argument('--multi-thread', default=False, action='store_true',
 
 parser.add_argument('--gc', default=False, action='store_true',
         help='Test with GC')
+
+parser.add_argument('--extended-const', action='store_true',
+                       help='Enable extended const expression feature')
 
 parser.add_argument('--memory64', default=False, action='store_true',
         help='Test with Memory64')
@@ -1111,6 +1115,8 @@ def compile_wast_to_wasm(form, wast_tempfile, wasm_tempfile, opts):
         cmd = [opts.wast2wasm, "--enable-memory64", "--no-check", wast_tempfile, "-o", wasm_tempfile ]
     elif opts.multi_memory:
         cmd = [opts.wast2wasm, "--enable-multi-memory", "--no-check", wast_tempfile, "-o", wasm_tempfile ]
+    elif opts.extended_const:
+        cmd = [opts.wast2wasm, "--enable-extended-const", "--no-check", wast_tempfile, "-o", wasm_tempfile ]
     else:
         # `--enable-multi-memory` for a case in memory.wast but doesn't require runtime support
         cmd = [opts.wast2wasm, "--enable-multi-memory", "--enable-threads", "--no-check",
@@ -1153,6 +1159,9 @@ def compile_wasm_to_aot(wasm_tempfile, aot_tempfile, runner, opts, r, output = '
     if opts.gc:
         cmd.append("--enable-gc")
         cmd.append("--enable-tail-call")
+
+    if opts.extended_const:
+        cmd.append("--enable-extended-const")
 
     if output == 'object':
         cmd.append("--format=object")
@@ -1541,11 +1550,10 @@ if __name__ == "__main__":
 
                 if test_aot:
                     new_module_aot = os.path.join(tempfile.gettempdir(), name_new + ".aot")
-                    r = compile_wasm_to_aot(new_module, new_module_aot, True, opts, r)
                     try:
-                        assert_prompt(r, ['Compile success'], opts.start_timeout, True)
-                    except:
-                        raise Exception("compile wasm to aot failed")
+                        compile_wasm_to_aot(new_module, new_module_aot, None, opts, r)
+                    except Exception as e:
+                        raise Exception(f"compile wasm to aot failed. {e}")
                     # add aot module into temp_file_repo[]
                     temp_file_repo.append(new_module_aot)
             else:

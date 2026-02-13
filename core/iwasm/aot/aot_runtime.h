@@ -125,6 +125,8 @@ typedef struct AOTModuleInstanceExtra {
      */
     DefPointer(uint8 *, shared_heap_base_addr_adj);
     MemBound shared_heap_start_off;
+    MemBound shared_heap_end_off;
+    DefPointer(WASMSharedHeap *, shared_heap);
 
     WASMModuleInstanceExtraCommon common;
 
@@ -142,9 +144,6 @@ typedef struct AOTModuleInstanceExtra {
     WASMModuleInstanceCommon **import_func_module_insts;
 #endif
 
-#if WASM_ENABLE_SHARED_HEAP != 0
-    WASMSharedHeap *shared_heap;
-#endif
 } AOTModuleInstanceExtra;
 
 #if defined(BUILD_TARGET_X86_64) || defined(BUILD_TARGET_AMD_64)
@@ -437,6 +436,9 @@ typedef struct AOTFrame {
 } AOTFrame;
 
 #if WASM_ENABLE_STATIC_PGO != 0
+/* The bitmaps fields in LLVMProfileRawHeader, LLVMProfileData,
+ * LLVMProfileData_64 all dummy fields, it's used in MC/DC code coverage
+ * instead of PGO. See https://llvm.org/docs/InstrProfileFormat.html#bitmap */
 typedef struct LLVMProfileRawHeader {
     uint64 magic;
     uint64 version;
@@ -445,8 +447,11 @@ typedef struct LLVMProfileRawHeader {
     uint64 padding_bytes_before_counters;
     uint64 num_prof_counters;
     uint64 padding_bytes_after_counters;
+    uint64 num_prof_bitmaps;
+    uint64 padding_bytes_after_bitmaps;
     uint64 names_size;
     uint64 counters_delta;
+    uint64 bitmap_delta;
     uint64 names_delta;
     uint64 value_kind_last;
 } LLVMProfileRawHeader;
@@ -464,10 +469,12 @@ typedef struct LLVMProfileData {
     uint64 func_md5;
     uint64 func_hash;
     uint64 offset_counters;
+    uint64 offset_bitmaps;
     uintptr_t func_ptr;
     ValueProfNode **values;
     uint32 num_counters;
     uint16 num_value_sites[2];
+    uint32 num_bitmaps;
 } LLVMProfileData;
 
 /* The profiling data for writing to the output file, the width of
@@ -477,10 +484,12 @@ typedef struct LLVMProfileData_64 {
     uint64 func_md5;
     uint64 func_hash;
     uint64 offset_counters;
+    uint64 offset_bitmaps;
     uint64 func_ptr;
     uint64 values;
     uint32 num_counters;
     uint16 num_value_sites[2];
+    uint32 num_bitmaps;
 } LLVMProfileData_64;
 #endif /* end of WASM_ENABLE_STATIC_PGO != 0 */
 
@@ -535,10 +544,7 @@ aot_resolve_import_func(AOTModule *module, AOTImportFunc *import_func);
  *
  * @param module the AOT module to instantiate
  * @param parent the parent module instance
- * @param heap_size the default heap size of the module instance, a heap will
- *        be created besides the app memory space. Both wasm app and native
- *        function can allocate memory from the heap. If heap_size is 0, the
- *        default heap size will be used.
+ * @param args   the instantiation parameters
  * @param error_buf buffer to output the error info if failed
  * @param error_buf_size the size of the error buffer
  *
@@ -546,8 +552,8 @@ aot_resolve_import_func(AOTModule *module, AOTImportFunc *import_func);
  */
 AOTModuleInstance *
 aot_instantiate(AOTModule *module, AOTModuleInstance *parent,
-                WASMExecEnv *exec_env_main, uint32 stack_size, uint32 heap_size,
-                uint32 max_memory_pages, char *error_buf,
+                WASMExecEnv *exec_env_main,
+                const struct InstantiationArgs2 *args, char *error_buf,
                 uint32 error_buf_size);
 
 /**
@@ -777,12 +783,12 @@ aot_frame_update_profile_info(WASMExecEnv *exec_env, bool alloc_frame);
 bool
 aot_create_call_stack(struct WASMExecEnv *exec_env);
 
-#if WAMR_ENABLE_COPY_CALLSTACK != 0
+#if WASM_ENABLE_COPY_CALL_STACK != 0
 uint32
-aot_copy_callstack(WASMExecEnv *exec_env, wasm_frame_t *buffer,
+aot_copy_callstack(WASMExecEnv *exec_env, WASMCApiFrame *buffer,
                    const uint32 length, const uint32 skip_n, char *error_buf,
                    uint32_t error_buf_size);
-#endif // WAMR_ENABLE_COPY_CALLSTACK
+#endif // WASM_ENABLE_COPY_CALL_STACK
 
 /**
  * @brief Dump wasm call stack or get the size

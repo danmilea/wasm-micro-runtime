@@ -582,7 +582,7 @@ fail1:
 static bool
 wasm_runtime_exec_env_check(WASMExecEnv *exec_env)
 {
-    return exec_env && exec_env->module_inst && exec_env->wasm_stack_size > 0
+    return exec_env && exec_env->module_inst
            && exec_env->wasm_stack.top_boundary
                   == exec_env->wasm_stack.bottom + exec_env->wasm_stack_size
            && exec_env->wasm_stack.top <= exec_env->wasm_stack.top_boundary;
@@ -1504,7 +1504,7 @@ wasm_runtime_load_ex(uint8 *buf, uint32 size, const LoadArgs *args,
                                           error_buf_size);
 }
 
-WASM_RUNTIME_API_EXTERN bool
+bool
 wasm_runtime_resolve_symbols(WASMModuleCommon *module)
 {
 #if WASM_ENABLE_INTERP != 0
@@ -1623,25 +1623,34 @@ wasm_runtime_get_max_mem(uint32 max_memory_pages, uint32 module_init_page_count,
 WASMModuleInstanceCommon *
 wasm_runtime_instantiate_internal(WASMModuleCommon *module,
                                   WASMModuleInstanceCommon *parent,
-                                  WASMExecEnv *exec_env_main, uint32 stack_size,
-                                  uint32 heap_size, uint32 max_memory_pages,
+                                  WASMExecEnv *exec_env_main,
+                                  const struct InstantiationArgs2 *args,
                                   char *error_buf, uint32 error_buf_size)
 {
 #if WASM_ENABLE_INTERP != 0
     if (module->module_type == Wasm_Module_Bytecode)
         return (WASMModuleInstanceCommon *)wasm_instantiate(
             (WASMModule *)module, (WASMModuleInstance *)parent, exec_env_main,
-            stack_size, heap_size, max_memory_pages, error_buf, error_buf_size);
+            args, error_buf, error_buf_size);
 #endif
 #if WASM_ENABLE_AOT != 0
     if (module->module_type == Wasm_Module_AoT)
         return (WASMModuleInstanceCommon *)aot_instantiate(
             (AOTModule *)module, (AOTModuleInstance *)parent, exec_env_main,
-            stack_size, heap_size, max_memory_pages, error_buf, error_buf_size);
+            args, error_buf, error_buf_size);
 #endif
     set_error_buf(error_buf, error_buf_size,
                   "Instantiate module failed, invalid module type");
     return NULL;
+}
+
+void
+wasm_runtime_instantiation_args_set_defaults(struct InstantiationArgs2 *args)
+{
+    memset(args, 0, sizeof(*args));
+#if WASM_ENABLE_LIBC_WASI != 0
+    wasi_args_set_defaults(&args->wasi);
+#endif
 }
 
 WASMModuleInstanceCommon *
@@ -1649,9 +1658,13 @@ wasm_runtime_instantiate(WASMModuleCommon *module, uint32 stack_size,
                          uint32 heap_size, char *error_buf,
                          uint32 error_buf_size)
 {
-    return wasm_runtime_instantiate_internal(module, NULL, NULL, stack_size,
-                                             heap_size, 0, error_buf,
-                                             error_buf_size);
+    struct InstantiationArgs2 args;
+    wasm_runtime_instantiation_args_set_defaults(&args);
+    wasm_runtime_instantiation_args_set_default_stack_size(&args, stack_size);
+    wasm_runtime_instantiation_args_set_host_managed_heap_size(&args,
+                                                               heap_size);
+    return wasm_runtime_instantiate_internal(module, NULL, NULL, &args,
+                                             error_buf, error_buf_size);
 }
 
 WASMModuleInstanceCommon *
@@ -1659,10 +1672,136 @@ wasm_runtime_instantiate_ex(WASMModuleCommon *module,
                             const InstantiationArgs *args, char *error_buf,
                             uint32 error_buf_size)
 {
-    return wasm_runtime_instantiate_internal(
-        module, NULL, NULL, args->default_stack_size,
-        args->host_managed_heap_size, args->max_memory_pages, error_buf,
-        error_buf_size);
+    struct InstantiationArgs2 v2;
+    wasm_runtime_instantiation_args_set_defaults(&v2);
+    v2.v1 = *args;
+    return wasm_runtime_instantiate_ex2(module, &v2, error_buf, error_buf_size);
+}
+
+bool
+wasm_runtime_instantiation_args_create(struct InstantiationArgs2 **p)
+{
+    struct InstantiationArgs2 *args = wasm_runtime_malloc(sizeof(*args));
+    if (args == NULL) {
+        return false;
+    }
+    wasm_runtime_instantiation_args_set_defaults(args);
+    *p = args;
+    return true;
+}
+
+void
+wasm_runtime_instantiation_args_destroy(struct InstantiationArgs2 *p)
+{
+    wasm_runtime_free(p);
+}
+
+void
+wasm_runtime_instantiation_args_set_default_stack_size(
+    struct InstantiationArgs2 *p, uint32 v)
+{
+    p->v1.default_stack_size = v;
+}
+
+void
+wasm_runtime_instantiation_args_set_host_managed_heap_size(
+    struct InstantiationArgs2 *p, uint32 v)
+{
+    p->v1.host_managed_heap_size = v;
+}
+
+void
+wasm_runtime_instantiation_args_set_max_memory_pages(
+    struct InstantiationArgs2 *p, uint32 v)
+{
+    p->v1.max_memory_pages = v;
+}
+
+#if WASM_ENABLE_LIBC_WASI != 0
+void
+wasm_runtime_instantiation_args_set_wasi_arg(struct InstantiationArgs2 *p,
+                                             char *argv[], int argc)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->argv = argv;
+    wasi_args->argc = (uint32)argc;
+    wasi_args->set_by_user = true;
+}
+
+void
+wasm_runtime_instantiation_args_set_wasi_env(struct InstantiationArgs2 *p,
+                                             const char *env[],
+                                             uint32 env_count)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->env = env;
+    wasi_args->env_count = env_count;
+    wasi_args->set_by_user = true;
+}
+
+void
+wasm_runtime_instantiation_args_set_wasi_dir(struct InstantiationArgs2 *p,
+                                             const char *dir_list[],
+                                             uint32 dir_count,
+                                             const char *map_dir_list[],
+                                             uint32 map_dir_count)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->dir_list = dir_list;
+    wasi_args->dir_count = dir_count;
+    wasi_args->map_dir_list = map_dir_list;
+    wasi_args->map_dir_count = map_dir_count;
+    wasi_args->set_by_user = true;
+}
+
+void
+wasm_runtime_instantiation_args_set_wasi_stdio(struct InstantiationArgs2 *p,
+                                               int64 stdinfd, int64 stdoutfd,
+                                               int64 stderrfd)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->stdio[0] = (os_raw_file_handle)stdinfd;
+    wasi_args->stdio[1] = (os_raw_file_handle)stdoutfd;
+    wasi_args->stdio[2] = (os_raw_file_handle)stderrfd;
+    wasi_args->set_by_user = true;
+}
+
+void
+wasm_runtime_instantiation_args_set_wasi_addr_pool(struct InstantiationArgs2 *p,
+                                                   const char *addr_pool[],
+                                                   uint32 addr_pool_size)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->addr_pool = addr_pool;
+    wasi_args->addr_count = addr_pool_size;
+    wasi_args->set_by_user = true;
+}
+
+void
+wasm_runtime_instantiation_args_set_wasi_ns_lookup_pool(
+    struct InstantiationArgs2 *p, const char *ns_lookup_pool[],
+    uint32 ns_lookup_pool_size)
+{
+    WASIArguments *wasi_args = &p->wasi;
+
+    wasi_args->ns_lookup_pool = ns_lookup_pool;
+    wasi_args->ns_lookup_count = ns_lookup_pool_size;
+    wasi_args->set_by_user = true;
+}
+#endif /* WASM_ENABLE_LIBC_WASI != 0 */
+
+WASMModuleInstanceCommon *
+wasm_runtime_instantiate_ex2(WASMModuleCommon *module,
+                             const struct InstantiationArgs2 *args,
+                             char *error_buf, uint32 error_buf_size)
+{
+    return wasm_runtime_instantiate_internal(module, NULL, NULL, args,
+                                             error_buf, error_buf_size);
 }
 
 void
@@ -1743,9 +1882,9 @@ wasm_runtime_destroy_exec_env(WASMExecEnv *exec_env)
     wasm_exec_env_destroy(exec_env);
 }
 
-#if WAMR_ENABLE_COPY_CALLSTACK != 0
+#if WASM_ENABLE_COPY_CALL_STACK != 0
 uint32
-wasm_copy_callstack(const wasm_exec_env_t exec_env, wasm_frame_t *buffer,
+wasm_copy_callstack(const wasm_exec_env_t exec_env, WASMCApiFrame *buffer,
                     const uint32 length, const uint32 skip_n, char *error_buf,
                     uint32_t error_buf_size)
 {
@@ -1780,7 +1919,7 @@ wasm_copy_callstack(const wasm_exec_env_t exec_env, wasm_frame_t *buffer,
     strncpy(error_buf, err_msg, error_buf_size);
     return 0;
 }
-#endif // WAMR_ENABLE_COPY_CALLSTACK
+#endif // WASM_ENABLE_COPY_CALL_STACK
 
 bool
 wasm_runtime_init_thread_env(void)
@@ -2282,6 +2421,15 @@ wasm_runtime_access_exce_check_guard_page()
         uint32 page_size = os_getpagesize();
         memset(exec_env_tls->exce_check_guard_page, 0, page_size);
     }
+}
+#endif
+
+#if WASM_ENABLE_INSTRUCTION_METERING != 0
+void
+wasm_runtime_set_instruction_count_limit(WASMExecEnv *exec_env,
+                                         int instructions_to_execute)
+{
+    exec_env->instructions_to_execute = instructions_to_execute;
 }
 #endif
 
@@ -3373,6 +3521,21 @@ wasm_runtime_module_dup_data(WASMModuleInstanceCommon *module_inst,
 
 #if WASM_ENABLE_LIBC_WASI != 0
 
+void
+wasi_args_set_defaults(WASIArguments *args)
+{
+    memset(args, 0, sizeof(*args));
+#if WASM_ENABLE_UVWASI == 0
+    args->stdio[0] = os_invalid_raw_handle();
+    args->stdio[1] = os_invalid_raw_handle();
+    args->stdio[2] = os_invalid_raw_handle();
+#else
+    args->stdio[0] = os_get_invalid_handle();
+    args->stdio[1] = os_get_invalid_handle();
+    args->stdio[2] = os_get_invalid_handle();
+#endif /* WASM_ENABLE_UVWASI == 0 */
+}
+
 static WASIArguments *
 get_wasi_args_from_module(wasm_module_t module)
 {
@@ -3412,6 +3575,7 @@ wasm_runtime_set_wasi_args_ex(WASMModuleCommon *module, const char *dir_list[],
     wasi_args->stdio[0] = (os_raw_file_handle)stdinfd;
     wasi_args->stdio[1] = (os_raw_file_handle)stdoutfd;
     wasi_args->stdio[2] = (os_raw_file_handle)stderrfd;
+    wasi_args->set_by_user = true;
 
 #if WASM_ENABLE_MULTI_MODULE != 0
 #if WASM_ENABLE_INTERP != 0
@@ -3442,6 +3606,7 @@ wasm_runtime_set_wasi_addr_pool(wasm_module_t module, const char *addr_pool[],
     if (wasi_args) {
         wasi_args->addr_pool = addr_pool;
         wasi_args->addr_count = addr_pool_size;
+        wasi_args->set_by_user = true;
     }
 }
 
@@ -3455,6 +3620,7 @@ wasm_runtime_set_wasi_ns_lookup_pool(wasm_module_t module,
     if (wasi_args) {
         wasi_args->ns_lookup_pool = ns_lookup_pool;
         wasi_args->ns_lookup_count = ns_lookup_pool_size;
+        wasi_args->set_by_user = true;
     }
 }
 
@@ -3732,7 +3898,8 @@ wasm_runtime_init_wasi(WASMModuleInstanceCommon *module_inst,
 
     /* addr_pool(textual) -> apool */
     for (i = 0; i < addr_pool_size; i++) {
-        char *cp, *address, *mask;
+        char *cp, *address, *mask, *nextptr, *endptr;
+        long mask_val;
         bool ret = false;
 
         cp = bh_strdup(addr_pool[i]);
@@ -3742,10 +3909,35 @@ wasm_runtime_init_wasi(WASMModuleInstanceCommon *module_inst,
             goto fail;
         }
 
-        address = strtok(cp, "/");
-        mask = strtok(NULL, "/");
+        address = bh_strtok_r(cp, "/", &nextptr);
+        mask = bh_strtok_r(NULL, "/", &nextptr);
 
-        ret = addr_pool_insert(apool, address, (uint8)(mask ? atoi(mask) : 0));
+        if (!mask) {
+            snprintf(error_buf, error_buf_size,
+                     "Invalid address pool entry: %s, must be in the format of "
+                     "ADDRESS/MASK",
+                     addr_pool[i]);
+            wasm_runtime_free(cp);
+            goto fail;
+        }
+
+        errno = 0;
+        mask_val = strtol(mask, &endptr, 10);
+
+        if (mask == endptr || *endptr != '\0') {
+            snprintf(error_buf, error_buf_size,
+                     "Invalid address pool entry: mask must be a number");
+            wasm_runtime_free(cp);
+            goto fail;
+        }
+        if (errno != 0 || mask_val < 0) {
+            snprintf(error_buf, error_buf_size,
+                     "Init wasi environment failed: invalid mask number");
+            wasm_runtime_free(cp);
+            goto fail;
+        }
+
+        ret = addr_pool_insert(apool, address, (uint8)mask_val);
         wasm_runtime_free(cp);
         if (!ret) {
             set_error_buf(error_buf, error_buf_size,
@@ -3877,11 +4069,15 @@ wasm_runtime_init_wasi(WASMModuleInstanceCommon *module_inst,
     init_options.allocator = &uvwasi_allocator;
     init_options.argc = argc;
     init_options.argv = (const char **)argv;
-    init_options.in = (stdinfd != -1) ? (uvwasi_fd_t)stdinfd : init_options.in;
-    init_options.out =
-        (stdoutfd != -1) ? (uvwasi_fd_t)stdoutfd : init_options.out;
-    init_options.err =
-        (stderrfd != -1) ? (uvwasi_fd_t)stderrfd : init_options.err;
+    init_options.in = (stdinfd != os_get_invalid_handle())
+                          ? (uvwasi_fd_t)stdinfd
+                          : init_options.in;
+    init_options.out = (stdoutfd != os_get_invalid_handle())
+                           ? (uvwasi_fd_t)stdoutfd
+                           : init_options.out;
+    init_options.err = (stderrfd != os_get_invalid_handle())
+                           ? (uvwasi_fd_t)stderrfd
+                           : init_options.err;
 
     if (dir_count > 0) {
         init_options.preopenc = dir_count;
@@ -7574,9 +7770,8 @@ delete_loading_module:
 bool
 wasm_runtime_sub_module_instantiate(WASMModuleCommon *module,
                                     WASMModuleInstanceCommon *module_inst,
-                                    uint32 stack_size, uint32 heap_size,
-                                    uint32 max_memory_pages, char *error_buf,
-                                    uint32 error_buf_size)
+                                    const struct InstantiationArgs2 *args,
+                                    char *error_buf, uint32 error_buf_size)
 {
     bh_list *sub_module_inst_list = NULL;
     WASMRegisteredModule *sub_module_list_node = NULL;
@@ -7604,8 +7799,7 @@ wasm_runtime_sub_module_instantiate(WASMModuleCommon *module,
         WASMModuleCommon *sub_module = sub_module_list_node->module;
         WASMModuleInstanceCommon *sub_module_inst = NULL;
         sub_module_inst = wasm_runtime_instantiate_internal(
-            sub_module, NULL, NULL, stack_size, heap_size, max_memory_pages,
-            error_buf, error_buf_size);
+            sub_module, NULL, NULL, args, error_buf, error_buf_size);
         if (!sub_module_inst) {
             LOG_DEBUG("instantiate %s failed",
                       sub_module_list_node->module_name);
@@ -7836,7 +8030,7 @@ wasm_runtime_detect_native_stack_overflow_size(WASMExecEnv *exec_env,
     return true;
 }
 
-WASM_RUNTIME_API_EXTERN bool
+bool
 wasm_runtime_is_underlying_binary_freeable(WASMModuleCommon *const module)
 {
 #if WASM_ENABLE_INTERP != 0
@@ -7870,3 +8064,37 @@ wasm_runtime_is_underlying_binary_freeable(WASMModuleCommon *const module)
 
     return true;
 }
+
+#if WASM_ENABLE_SHARED_HEAP != 0
+bool
+wasm_runtime_check_and_update_last_used_shared_heap(
+    WASMModuleInstanceCommon *module_inst, uintptr_t app_offset, size_t bytes,
+    uintptr_t *shared_heap_start_off_p, uintptr_t *shared_heap_end_off_p,
+    uint8 **shared_heap_base_addr_adj_p, bool is_memory64)
+{
+    WASMSharedHeap *heap = wasm_runtime_get_shared_heap(module_inst), *cur;
+    uint64 shared_heap_start, shared_heap_end;
+
+    if (bytes == 0) {
+        bytes = 1;
+    }
+
+    /* Find the exact shared heap that app addr is in, and update last used
+     * shared heap info in func context */
+    for (cur = heap; cur; cur = cur->chain_next) {
+        shared_heap_start =
+            is_memory64 ? cur->start_off_mem64 : cur->start_off_mem32;
+        shared_heap_end = shared_heap_start - 1 + cur->size;
+        if (bytes - 1 <= shared_heap_end && app_offset >= shared_heap_start
+            && app_offset <= shared_heap_end - bytes + 1) {
+            *shared_heap_start_off_p = (uintptr_t)shared_heap_start;
+            *shared_heap_end_off_p = (uintptr_t)shared_heap_end;
+            *shared_heap_base_addr_adj_p =
+                cur->base_addr - (uintptr_t)shared_heap_start;
+            return true;
+        }
+    }
+
+    return false;
+}
+#endif

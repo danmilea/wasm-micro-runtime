@@ -59,7 +59,7 @@ b_memcpy_wa(void *s1, unsigned int s1max, const void *s2, unsigned int n)
                 *dest++ = *p_byte_read++;
             }
         }
-        /* read meaning word(s) */
+        /* read remaining word(s) */
         else {
             if ((char *)p + 4 >= src + n) {
                 for (ps = (char *)p; ps < src + n; ps++) {
@@ -164,6 +164,16 @@ wa_strdup(const char *s)
             bh_memcpy_s(s1, size, s, size);
     }
     return s1;
+}
+
+char *
+bh_strtok_r(char *str, const char *delim, char **saveptr)
+{
+#if !(defined(_WIN32) || defined(_WIN32_))
+    return strtok_r(str, delim, saveptr);
+#else
+    return strtok_s(str, delim, saveptr);
+#endif
 }
 
 #if WASM_ENABLE_WAMR_COMPILER != 0 || WASM_ENABLE_JIT != 0

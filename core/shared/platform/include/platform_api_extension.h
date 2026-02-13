@@ -1608,6 +1608,15 @@ os_file_handle
 os_get_invalid_handle(void);
 
 /**
+ * Returns an invalid raw file handle that is guaranteed to cause failure when
+ * called with any filesystem operation.
+ *
+ * @return the invalid raw file handle
+ */
+os_raw_file_handle
+os_invalid_raw_handle(void);
+
+/**
  * Checks whether the given file handle is valid. An invalid handle is
  * guaranteed to cause failure when called with any filesystem operation.
  *
@@ -1663,5 +1672,25 @@ os_clock_time_get(__wasi_clockid_t clock_id, __wasi_timestamp_t precision,
 #ifdef __cplusplus
 }
 #endif
+
+/* Experimental */
+
+/* Used in posix.c around L2259 and expect the return code
+ * of ioctl() directly.
+ */
+int
+os_ioctl(os_file_handle handle, int request, ...);
+
+/* Higher level API:
+ * __wasi_errno_t
+ * blocking_op_poll(wasm_exec_env_t exec_env, os_poll_file_handle *pfds,
+ *             os_nfds_t nfds, int timeout_ms, int *retp)
+ * Already format the errno and expect the return code of poll() directly.
+ */
+int
+os_poll(os_poll_file_handle *pfds, os_nfds_t nfs, int timeout);
+
+bool
+os_compare_file_handle(os_file_handle handle1, os_file_handle handle2);
 
 #endif /* #ifndef PLATFORM_API_EXTENSION_H */

@@ -45,7 +45,7 @@ libc_wasi_print_help(void)
            "path, for example:\n");
     printf("                             --map-dir=<guest-path1::host-path1> "
            "--map-dir=<guest-path2::host-path2>\n");
-    printf("  --addr-pool=<addrs>      Grant wasi access to the given network "
+    printf("  --addr-pool=<addr/mask>  Grant wasi access to the given network "
            "addresses in\n");
     printf("                           CIDR notation to the program, separated "
            "with ',',\n");
@@ -141,7 +141,7 @@ libc_wasi_parse(char *arg, libc_wasi_parse_context_t *ctx)
             }
 
             ctx->addr_pool[ctx->addr_pool_size++] = token;
-            token = strtok(NULL, ";");
+            token = strtok(NULL, ",");
         }
     }
     else if (!strncmp(arg, "--allow-resolve=", 16)) {
@@ -162,16 +162,18 @@ libc_wasi_parse(char *arg, libc_wasi_parse_context_t *ctx)
     return LIBC_WASI_PARSE_RESULT_OK;
 }
 
-void
-libc_wasi_init(wasm_module_t wasm_module, int argc, char **argv,
-               libc_wasi_parse_context_t *ctx)
+static void
+libc_wasi_set_init_args(struct InstantiationArgs2 *args, int argc, char **argv,
+                        libc_wasi_parse_context_t *ctx)
 {
-    wasm_runtime_set_wasi_args(wasm_module, ctx->dir_list, ctx->dir_list_size,
-                               ctx->map_dir_list, ctx->map_dir_list_size,
-                               ctx->env_list, ctx->env_list_size, argv, argc);
-
-    wasm_runtime_set_wasi_addr_pool(wasm_module, ctx->addr_pool,
-                                    ctx->addr_pool_size);
-    wasm_runtime_set_wasi_ns_lookup_pool(wasm_module, ctx->ns_lookup_pool,
-                                         ctx->ns_lookup_pool_size);
+    wasm_runtime_instantiation_args_set_wasi_arg(args, argv, argc);
+    wasm_runtime_instantiation_args_set_wasi_env(args, ctx->env_list,
+                                                 ctx->env_list_size);
+    wasm_runtime_instantiation_args_set_wasi_dir(
+        args, ctx->dir_list, ctx->dir_list_size, ctx->map_dir_list,
+        ctx->map_dir_list_size);
+    wasm_runtime_instantiation_args_set_wasi_addr_pool(args, ctx->addr_pool,
+                                                       ctx->addr_pool_size);
+    wasm_runtime_instantiation_args_set_wasi_ns_lookup_pool(
+        args, ctx->ns_lookup_pool, ctx->ns_lookup_pool_size);
 }

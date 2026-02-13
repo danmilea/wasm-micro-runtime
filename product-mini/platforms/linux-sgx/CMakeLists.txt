@@ -16,10 +16,6 @@ if (NOT DEFINED WAMR_BUILD_TARGET)
   if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     # Build as X86_64 by default in 64-bit platform
     set (WAMR_BUILD_TARGET "X86_64")
-    if (NOT DEFINED WAMR_BUILD_SIMD)
-      # Enable SIMD by default in 64-bit platform
-      set (WAMR_BUILD_SIMD 1)
-    endif ()
   elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
     # Build as X86_32 by default in 32-bit platform
     set (WAMR_BUILD_TARGET "X86_32")
@@ -74,7 +70,7 @@ if (NOT DEFINED WAMR_BUILD_FAST_INTERP)
 endif ()
 
 if (NOT DEFINED WAMR_BUILD_MULTI_MODULE)
-  # Enable multiple modules
+  # Disable multiple modules
   set (WAMR_BUILD_MULTI_MODULE 0)
 endif ()
 
@@ -96,6 +92,11 @@ endif ()
 if (NOT DEFINED WAMR_BUILD_STATIC_PGO)
   # Disable static PGO by default
   set (WAMR_BUILD_STATIC_PGO 0)
+endif ()
+
+if (NOT DEFINED WAMR_BUILD_REF_TYPES)
+  # Enable reference types by default
+  set (WAMR_BUILD_REF_TYPES 1)
 endif ()
 
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")

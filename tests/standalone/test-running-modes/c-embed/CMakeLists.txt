@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-project(c_embed_test)
-
 cmake_minimum_required(VERSION 3.14)
+
+project(c_embed_test)
 
 include(CheckPIESupported)
 
@@ -34,12 +34,15 @@ set(WAMR_BUILD_LIBC_WASI 1)
 set(WAMR_BUILD_SIMD 1)
 set(WAMR_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/../../../..)
 
+if (NOT DEFINED WAMR_BUILD_REF_TYPES)
+  # Enable reference types by default
+  set (WAMR_BUILD_REF_TYPES 1)
+endif ()
+
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 if (NOT WAMR_BUILD_PLATFORM STREQUAL "darwin")
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -pie -fPIE")
 endif ()
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wformat -Wformat-security -Wshadow")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wformat -Wformat-security -Wno-unused")
 
 # build out vmlib
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
