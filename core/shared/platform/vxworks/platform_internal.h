@@ -6,35 +6,26 @@
 #ifndef _PLATFORM_INTERNAL_H
 #define _PLATFORM_INTERNAL_H
 
-#include <inttypes.h>
-#include <stdbool.h>
+#include <vxWorks.h>
 #include <assert.h>
-#include <time.h>
-#include <string.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <ioLib.h>
+#include <math.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+#include <semLib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <pthread.h>
-#include <signal.h>
-#include <semaphore.h>
-#include <limits.h>
-#include <dirent.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <poll.h>
-#include <sched.h>
-#include <errno.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-#include <sys/uio.h>
+#include <string.h>
 #include <sys/ioctl.h>
+#include <semaphore.h>
 #include <sys/socket.h>
-#include <sys/resource.h>
-#include <netinet/in.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -165,30 +156,12 @@ os_get_invalid_handle(void)
     return -1;
 }
 
-struct ip_mreq {
-    struct  in_addr imr_multiaddr;  /* IP multicast address of group */
-    struct  in_addr imr_interface;  /* local IP address of interface */
-};
-
 ssize_t pread(int fd, void * buf, size_t size, off_t offset);
 ssize_t pwrite(int fd, const void * buf, size_t size, off_t offset);
-int openat(int fd, const char *path, int oflags, ...);
-ssize_t readlinkat(int dirfd, const char *restrict pathname,
-                        char *restrict buf, size_t bufsiz);
-int mkdirat(int dirfd, const char *pathname, mode_t mode);
-int linkat(int olddirfd, const char *oldpath, int newdirfd,
-                const char *newpath, int flags);
-int symlinkat(const char *target, int newdirfd, const char *linkpath);
-int fstatat(int fd, const char *restrict path,
-           struct stat *restrict buf, int flag);
-DIR *fdopendir(int fd);
 void seekdir(DIR *dirp, long loc);
 long telldir(DIR *dirp);
 int renameat(int olddirfd, const char *oldpath,
              int newdirfd, const char *newpath);
-int unlinkat(int dirfd, const char *pathname, int flags);
-int utimensat(int fd, const char *path, const struct timespec times[2],
-           int flag);
 int getentropy(void *buffer, size_t length);
 
 #ifdef __cplusplus
