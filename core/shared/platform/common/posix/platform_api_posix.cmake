@@ -28,7 +28,7 @@ set (CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE ${CMAKE_REQUIRED_DEFINITIONS})
 check_symbol_exists (mremap "sys/mman.h" MREMAP_EXISTS)
 list (REMOVE_AT CMAKE_REQUIRED_DEFINITIONS 0)
 
-if(MREMAP_EXISTS)
+if(MREMAP_EXISTS AND (NOT "${WAMR_BUILD_PLATFORM}" STREQUAL "vxworks"))
     add_definitions (-DWASM_HAVE_MREMAP=1)
     add_definitions (-D_GNU_SOURCE)
 else()

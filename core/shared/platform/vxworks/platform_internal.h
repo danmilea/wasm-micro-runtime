@@ -6,35 +6,26 @@
 #ifndef _PLATFORM_INTERNAL_H
 #define _PLATFORM_INTERNAL_H
 
-#include <inttypes.h>
-#include <stdbool.h>
+#include <vxWorks.h>
 #include <assert.h>
-#include <time.h>
-#include <string.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <ioLib.h>
+#include <math.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+#include <semLib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <pthread.h>
-#include <signal.h>
-#include <semaphore.h>
-#include <limits.h>
-#include <dirent.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <poll.h>
-#include <sched.h>
-#include <errno.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-#include <sys/timeb.h>
-#include <sys/uio.h>
+#include <string.h>
 #include <sys/ioctl.h>
+#include <semaphore.h>
 #include <sys/socket.h>
-#include <sys/resource.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +34,65 @@ extern "C" {
 #ifndef BH_PLATFORM_VXWORKS
 #define BH_PLATFORM_VXWORKS
 #endif
+
+#if !defined(O_DIRECTORY)
+#define	O_DIRECTORY	0x00020000	/* Fail if not directory */
+#endif
+#if !defined(O_NOFOLLOW)
+#define	O_NOFOLLOW	0x0100		/* don't follow symlinks */
+#endif
+
+#if !defined(AT_SYMLINK_FOLLOW)
+#define	AT_SYMLINK_FOLLOW	0x0400	/* Follow symbolic link */
+#endif
+
+#if !defined(AT_SYMLINK_NOFOLLOW)
+#define	AT_SYMLINK_NOFOLLOW	0x0200	/* Do not follow symbolic links */
+#endif
+
+#if !defined( AT_FDCWD)
+#define AT_FDCWD (-100)
+#endif
+
+#if !defined(PATH_MAX)
+#define PATH_MAX _POSIX_PATH_MAX
+#endif
+
+#if !defined(AT_REMOVEDIR)
+#define AT_REMOVEDIR 0x200
+#endif
+
+#undef INET6
+
+#ifndef S_ISSOCK
+#define S_ISSOCK(mode) ((mode & S_IFMT) == S_IFSOCK) // Is file a socket?
+#endif
+
+#if !defined(IP_MULTICAST_LOOP)
+#define IP_MULTICAST_LOOP   11
+#endif
+
+#if !defined(IP_ADD_MEMBERSHIP)
+#define IP_ADD_MEMBERSHIP   12
+#endif
+
+#if !defined(IP_DROP_MEMBERSHIP)
+#define IP_DROP_MEMBERSHIP  13
+#endif
+
+#if !defined(IP_TTL)
+#define IP_TTL              4
+#endif
+
+#if !defined(IP_MULTICAST_TTL)
+#define IP_MULTICAST_TTL    10
+#endif
+
+#if !defined(FIOGETNAME)
+#define FIOGETNAME 18
+#endif
+
+#define os_alloca __builtin_alloca
 
 /* Stack size of applet threads's native part.  */
 #define BH_APPLET_PRESERVED_STACK_SIZE (32 * 1024)
@@ -69,7 +119,7 @@ typedef int os_raw_file_handle;
    we just define them to make the compiler happy */
 typedef struct pollfd os_poll_file_handle;
 typedef nfds_t os_nfds_t;
-typedef timespec os_timespec;
+typedef struct timespec os_timespec;
 
 #if WASM_DISABLE_HW_BOUND_CHECK == 0
 #if defined(BUILD_TARGET_X86_64) || defined(BUILD_TARGET_AMD_64) \
@@ -83,7 +133,7 @@ typedef jmp_buf korp_jmpbuf;
 
 #define os_setjmp setjmp
 #define os_longjmp longjmp
-#define os_alloca alloca
+#define os_alloca __builtin_alloca
 
 typedef void (*os_signal_handler)(void *sig_addr);
 
@@ -111,6 +161,14 @@ os_get_invalid_handle(void)
 {
     return -1;
 }
+
+ssize_t pread(int fd, void * buf, size_t size, off_t offset);
+ssize_t pwrite(int fd, const void * buf, size_t size, off_t offset);
+void seekdir(DIR *dirp, long loc);
+long telldir(DIR *dirp);
+int renameat(int olddirfd, const char *oldpath,
+             int newdirfd, const char *newpath);
+int getentropy(void *buffer, size_t length);
 
 #ifdef __cplusplus
 }

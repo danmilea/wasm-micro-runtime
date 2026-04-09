@@ -180,6 +180,13 @@ statbuf_native2app(const struct stat *statbuf_native,
     statbuf_app->st_mtim.tv_nsec = (int)statbuf_native->st_mtimespec.tv_nsec;
     statbuf_app->st_ctim.tv_sec = (int)statbuf_native->st_ctimespec.tv_sec;
     statbuf_app->st_ctim.tv_nsec = (int)statbuf_native->st_ctimespec.tv_nsec;
+#elif defined(__VXWORKS__)
+    statbuf_app->st_atim.tv_sec = (int)statbuf_native->st_atime;
+    statbuf_app->st_atim.tv_nsec = 0;
+    statbuf_app->st_mtim.tv_sec = (int)statbuf_native->st_mtime;
+    statbuf_app->st_mtim.tv_nsec = 0;
+    statbuf_app->st_ctim.tv_sec = (int)statbuf_native->st_ctime;
+    statbuf_app->st_ctim.tv_nsec = 0;
 #else
     statbuf_app->st_atim.tv_sec = (int)statbuf_native->st_atim.tv_sec;
     statbuf_app->st_atim.tv_nsec = (int)statbuf_native->st_atim.tv_nsec;

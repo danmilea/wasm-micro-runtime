@@ -7,7 +7,7 @@
 #include "libc_errno.h"
 #include <unistd.h>
 
-#if !defined(__APPLE__) && !defined(ESP_PLATFORM)
+#if !defined(__APPLE__) && !defined(ESP_PLATFORM) && !defined(__VXWORKS__)
 #define CONFIG_HAS_PWRITEV 1
 #define CONFIG_HAS_PREADV 1
 #else
@@ -34,7 +34,7 @@
 #endif
 #endif
 
-#if !defined(__APPLE__) && !defined(ESP_PLATFORM) && !defined(__COSMOPOLITAN__)
+#if !defined(__APPLE__) && !defined(ESP_PLATFORM) && !defined(__COSMOPOLITAN__) && !defined(__VXWORKS__)
 #define CONFIG_HAS_POSIX_FALLOCATE 1
 #else
 #define CONFIG_HAS_POSIX_FALLOCATE 0
@@ -91,6 +91,10 @@ convert_stat(os_file_handle handle, const struct stat *in,
     out->st_atim = convert_timespec(&in->st_atimespec);
     out->st_mtim = convert_timespec(&in->st_mtimespec);
     out->st_ctim = convert_timespec(&in->st_ctimespec);
+#elif defined(__VXWORKS__)
+    out->st_atim = in->st_atime;
+    out->st_mtim = in->st_mtime;
+    out->st_ctim = in->st_ctime;
 #else
     out->st_atim = convert_timespec(&in->st_atim);
     out->st_mtim = convert_timespec(&in->st_mtim);
