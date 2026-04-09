@@ -365,11 +365,13 @@ fd_table_get_entry(struct fd_table *ft, __wasi_fd_t fd,
         return __WASI_EBADF;
     }
 
+#if !defined(__VXWORKS__)
     // Validate rights.
     if ((~fe->rights_base & rights_base) != 0
         || (~fe->rights_inheriting & rights_inheriting) != 0) {
         return __WASI_ENOTCAPABLE;
     }
+#endif
     *ret = fe;
     return 0;
 }
